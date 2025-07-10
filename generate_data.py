@@ -7,7 +7,6 @@ import random
 import numpy as np
 
 
-MARGIN = 10 # Margin to ensure the object is not cropped in the image
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 4 # Range for X-axis
@@ -28,6 +27,7 @@ output_location = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\data"
 scene = bpy.context.scene
 camera = bpy.data.objects["Camera"]
 
+depsgraph = bpy.context.evaluated_depsgraph_get()
 
 
 # === SET UP COMPOSITOR TREE ===
@@ -64,11 +64,10 @@ def get_viewpoints(center, radius):
             #for z in [-1, 0, 1]:
                 y = 1
                 z = 1
-                #if x == 0 and y == 0 and z == 0:
-                    #continue  # skip center
-                pos = center - mathutils.Vector((x, y, z)).normalized() * radius
+                if x == 0 and y == 0 and z == 0:
+                    continue  # skip center
+                pos = center + mathutils.Vector((x, y, z)).normalized() * radius
                 viewpoints.append(pos)
-                # TODO: I will add variations to viewpoints later
     
     return viewpoints
 
@@ -93,10 +92,8 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
     col3 = matrix.col[3]
 
     # Initialize min and max values for 2D bounding box
-    minX = 1
-    maxX = 0
-    minY = 1
-    maxY = 0
+    minX = minY = 1
+    maxX = maxY = 0
 
     # Determine the number of vertices to iterate over
     if use_mesh:
@@ -117,6 +114,9 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
 
         # maps a 3D point in world space into normalized camera view coordinates
         pos = bpy_extras.object_utils.world_to_camera_view(scene, camera, pos)
+
+        print(obj.name)
+        print(pos)
     
         # Update min and max values as needed
         if (pos.x < minX):
@@ -127,14 +127,8 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
             maxX = pos.x
         if (pos.y > maxY):
             maxY = pos.y
-    
-    # Save into YOLO format
-    x_center = (minX + maxX) / 2
-    y_center = 1 - (minY + maxY) / 2 # flip y-axis
-    width = maxX - minX
-    height = maxY - minY
 
-    return x_center, y_center, width, height
+    return minX, minY, maxX, maxY
 
 
 
@@ -162,59 +156,70 @@ def get_object_mask(obj, scene, output_folder, num_of_view):
     # Disable compositor tree
     scene.use_nodes = False
 
-def capture_views(collection, label_idx, camera, scene, output_folder, get_mask):
+def get_all_object_masks(collection, scene, output_folder):
+    pass
+
+def capture_views(obj, label_idx, camera, scene, output_folder, get_mask):
     # Disable compositor tree
+    '''
     scene.use_nodes = False
 
     for obj in collection.objects:
         if obj.type != 'MESH':
-            continue
+            continue'''
 
-        # Get bounding box corners in world space
-        bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+    # Get bounding box corners in world space
+    bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
-        # Get center and size
-        center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
-        max_dist = max((corner - center).length for corner in bbox_corners)
-        radius = max_dist + MARGIN 
+    # Get center and size
+    center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
+    max_dist = max((corner - center).length for corner in bbox_corners)
 
-        viewpoints = get_viewpoints(center, radius)
+    viewpoints = get_viewpoints(center, max_dist)
 
-        # Iterate through all viewpoints around one object
-        for i, pos in enumerate(viewpoints):
-            # Move camera to position
-            camera.location = pos
+    # Iterate through all viewpoints around one object
+    for i, pos in enumerate(viewpoints):
+        # Move camera to position
+        camera.location = pos
 
-            # Point camera at the object
-            direction = center - camera.location
-            rot_quat = direction.to_track_quat('-Z', 'Y')
-            camera.rotation_euler = rot_quat.to_euler()
+        # Point camera at the object
+        direction = center - camera.location
+        rot_quat = direction.to_track_quat('-Z', 'Y')
+        camera.rotation_euler = rot_quat.to_euler()
 
-            # Save the image
-            img_path = rf"{output_folder}\images\{obj.name}_view_{i+1}.jpg"
-            scene.render.image_settings.file_format = 'JPEG'
-            scene.render.image_settings.color_mode = 'RGB'
-            scene.render.filepath = img_path
-            bpy.ops.render.render(write_still=True)
-            
-            # Save the annotation in YOLO format
-            x_c, y_c, w, h = get_2d_bounding_box(obj, camera, scene)
-            label_path = rf"{output_folder}\labels\{obj.name}_view_{i+1}.txt"
-            with open(label_path, "w") as f:
-                f.write(f"{label_idx} {x_c:.6f} {y_c:.6f} {w:.6f} {h:.6f}\n")
-            
-            # Save the object mask if needed
-            if get_mask:
-                get_object_mask(obj, scene, output_folder, i+1)
+        # Get object 3D bounding box
+        corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+        coords = [coord for corner in corners for coord in corner]
+        
+        # Zoom to where the entire object will fit in view
+        bpy.context.view_layer.update()
+        location, foo = camera.camera_fit_coords(depsgraph, coords)
+        camera.location = location
 
+        # Save the image
+        img_path = rf"{output_folder}\images\{obj.name}_view_{i+1}.jpg"
+        scene.render.image_settings.file_format = 'JPEG'
+        scene.render.image_settings.color_mode = 'RGB'
+        scene.render.filepath = img_path
+        bpy.ops.render.render(write_still=True)
+        
+        # Get bounding box in camera's view
+        minX, minY, maxX, maxY = get_2d_bounding_box(obj, camera, scene)
 
-
-# === RENDER ALL OBJECTS ===
-def get_all_object_masks(collection, scene, output_folder):
-    pass
-
-def capture_all_views(collection, label_idx, camera, scene, output_folder, get_all_mask):
-    pass
+        # Convert to YOLO format
+        x_center = (minX + maxX) / 2
+        y_center = 1 - (minY + maxY) / 2 # flip y-axis
+        width = maxX - minX
+        height = maxY - minY
+        
+        # Save the annotation file
+        label_path = rf"{output_folder}\labels\{obj.name}_view_{i+1}.txt"
+        with open(label_path, "w") as f:
+            f.write(f"{label_idx} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+        
+        # Save the object mask if needed
+        if get_mask:
+            get_object_mask(obj, scene, output_folder, i+1)
 
 
 
@@ -269,7 +274,7 @@ def rotate_object(obj):
 
 # === RENDER LOOP FOR EACH COLLECTION ===
 
-def render_loop(label_idx, collection_name, output_location, get_mask):    
+def render_loop(label_idx, collection_name, output_location, get_mask, get_all_masks):    
     collection = bpy.data.collections.get(collection_name)
     if collection is None:
         print(f"Collection '{collection_name}' not found.")
@@ -277,9 +282,9 @@ def render_loop(label_idx, collection_name, output_location, get_mask):
     
     # Create output folder for a category
     output_folder = os.path.join(output_location, collection_name)
-    os.makedirs(output_folder, exist_ok=True)
     while os.path.exists(output_folder):
         output_folder = output_folder + "_new"
+    os.makedirs(output_folder)
 
     # Make subfolders
     for subfolder in ["images", "labels"]:
@@ -291,6 +296,13 @@ def render_loop(label_idx, collection_name, output_location, get_mask):
     # - place them randomly or in a specific way? 
     # TODO: add random lighting and shadows (cubes or distractors) to the scene
 
+    # Set the pass index for the objects in the collection if we want to generate masks
+    if get_all_masks:
+        for obj in collection.objects:
+            if obj.type != 'MESH':
+                continue
+        obj.pass_index = MASK_PASS_IDX  
+
     # Add augmentation to objects
     for obj in collection.objects:
         if obj.type != 'MESH':
@@ -300,8 +312,14 @@ def render_loop(label_idx, collection_name, output_location, get_mask):
         translate_object(obj, CENTER, X_RANGE, Y_RANGE, Z_RANGE)
         rotate_object(obj)
 
-    # Capture views for each object
-    capture_views(collection, label_idx, camera, scene, output_folder, get_mask)
+        # Capture views for each object
+        capture_views(obj, label_idx, camera, scene, output_folder, get_mask)
+
+    # Reset the pass index for the objects
+    for obj in collection.objects:
+        if obj.type != 'MESH':
+            continue
+        obj.pass_index = DEFAULT_PASS_IDX  
 
     # TODO: set up camera positions and take photos from multiple viewpoints
     # TODO: generate masks for all objects in the scene if GET_ALL_MASKS is True
@@ -328,4 +346,4 @@ if __name__ == "__main__":
     for label_idx in range(len(categories)):
         # Each category is a collection of meshes in Blender
         collection_name = categories[label_idx]
-        render_loop(label_idx, collection_name, output_location, GET_MASK)
+        render_loop(label_idx, collection_name, output_location, GET_MASK, GET_ALL_MASKS)
