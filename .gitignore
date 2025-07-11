@@ -1,6 +1,7 @@
-data/
 *.blend1
+data/
 backups/
+test/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

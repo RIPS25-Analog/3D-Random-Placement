@@ -19,11 +19,11 @@ MASK_PASS_IDX = 1 # Pass index for objects we want to generate masks on
 DEFAULT_PASS_IDX = 0 # Default pass index for all other objects
 
 GET_MASK = False  # Set to True if you want to generate mask for each object the camera focuses on
-GET_ALL_MASKS = False  # Set to True if you want to generate masks for all objects that appear in the scene
 
 # Define output locations
 categories = ["screwdriver"]
 output_location = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\data"
+bg_image_path = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\data\background\bg1.jpg"
 
 # Initial setups
 scene = bpy.context.scene
@@ -131,6 +131,91 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
 
 
 
+# === OBJECTS AUGMENTATION ===
+
+def rescale_object(obj, target_size, eps=0.1, apply=True): 
+    # Get bounding box corners in world space
+    bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+    
+    # Get size in each axis
+    min_corner = mathutils.Vector(map(min, zip(*bbox_corners)))
+    max_corner = mathutils.Vector(map(max, zip(*bbox_corners)))
+    dimensions = max_corner - min_corner
+
+    # Find largest dimension (width, height, depth)
+    current_size = max(dimensions)
+
+    final_size = target_size + random.uniform(-eps, eps)
+
+    # Compute scale factor
+    scale_factor = final_size / current_size
+
+    # Apply uniform scaling to the object
+    obj.scale *= scale_factor
+
+    if apply:
+        # Apply the scale to avoid future issues
+        bpy.context.view_layer.update()  # update for bbox recalculation
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+def translate_object(obj, center, x_range, y_range, z_range):
+    x = random.uniform(center.x - x_range, center.x + x_range)
+    y = random.uniform(center.y - y_range, center.y + y_range)
+    z = random.uniform(center.z - z_range, center.z + z_range)
+    obj.location = (x, y, z)
+
+def rotate_object(obj):
+    # Make sure the rotation mode is Euler
+    obj.rotation_mode = 'XYZ'
+
+    # Apply random Euler rotation
+    obj.rotation_euler = (
+        random.uniform(0, 2 * np.pi),  # X axis
+        random.uniform(0, 2 * np.pi),  # Y axis
+        random.uniform(0, 2 * np.pi)   # Z axis
+    )
+
+
+
+
+# === ADD BACKGROUND ===
+
+def add_background(bg_image_path):
+    # Ensure you're using the Compositor and nodes are enabled
+    bpy.context.scene.use_nodes = True
+    tree = bpy.context.scene.node_tree
+
+    # Clear all nodes
+    for node in tree.nodes:
+        tree.nodes.remove(node)
+
+    # Create nodes
+    render_layers = tree.nodes.new(type='CompositorNodeRLayers')
+    bg_image_node = tree.nodes.new(type='CompositorNodeImage')
+    alpha_over = tree.nodes.new(type='CompositorNodeAlphaOver')
+    composite_node = tree.nodes.new(type='CompositorNodeComposite')
+
+    # Load your image
+    image_path = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\data\background\bg1.jpg"
+    bg_image = bpy.data.images.load(bg_image_path)
+    bg_image_node.image = bg_image
+
+    # Set node locations for neat layout
+    render_layers.location = (0, 300)
+    bg_image_node.location = (0, 0)
+    alpha_over.location = (200, 150)
+    composite_node.location = (400, 150)
+
+    # Link nodes
+    links = tree.links
+    links.new(bg_image_node.outputs['Image'], alpha_over.inputs[1])      # Background
+    links.new(render_layers.outputs['Image'], alpha_over.inputs[2])   # Foreground (render)
+    links.new(alpha_over.outputs['Image'], composite_node.inputs['Image'])
+
+    # Set render settings for transparency
+    bpy.context.scene.render.film_transparent = True
+
+
 # === RENDER INDIVIDUAL OBJECT ===
 
 def get_object_mask(obj, scene, output_folder, num_of_view):
@@ -218,58 +303,9 @@ def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, g
 
 
 
-# === OBJECTS AUGMENTATION ===
-
-def rescale_object(obj, target_size, eps=0.1, apply=True): 
-    # Get bounding box corners in world space
-    bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
-    
-    # Get size in each axis
-    min_corner = mathutils.Vector(map(min, zip(*bbox_corners)))
-    max_corner = mathutils.Vector(map(max, zip(*bbox_corners)))
-    dimensions = max_corner - min_corner
-
-    # Find largest dimension (width, height, depth)
-    current_size = max(dimensions)
-
-    final_size = target_size + random.uniform(-eps, eps)
-
-    # Compute scale factor
-    scale_factor = final_size / current_size
-
-    # Apply uniform scaling to the object
-    obj.scale *= scale_factor
-
-    if apply:
-        # Apply the scale to avoid future issues
-        bpy.context.view_layer.update()  # update for bbox recalculation
-        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-
-def translate_object(obj, center, x_range, y_range, z_range):
-    x = random.uniform(center.x - x_range, center.x + x_range)
-    y = random.uniform(center.y - y_range, center.y + y_range)
-    z = random.uniform(center.z - z_range, center.z + z_range)
-    obj.location = (x, y, z)
-
-def rotate_object(obj):
-    # Make sure the rotation mode is Euler
-    obj.rotation_mode = 'XYZ'
-
-    # Apply random Euler rotation
-    obj.rotation_euler = (
-        random.uniform(0, 2 * np.pi),  # X axis
-        random.uniform(0, 2 * np.pi),  # Y axis
-        random.uniform(0, 2 * np.pi)   # Z axis
-    )
-
-
-    # TODO: add variating lightings and shadows (using boxes)
-
-
-
 # === RENDER LOOP FOR EACH COLLECTION ===
 
-def render_loop(label_idx, collection_name, output_location, zoom_distance, get_mask):    
+def render_loop(label_idx, collection_name, output_location, bg_image_path, zoom_distance, get_mask):    
     collection = bpy.data.collections.get(collection_name)
     if collection is None:
         print(f"Collection '{collection_name}' not found.")
@@ -307,6 +343,7 @@ def render_loop(label_idx, collection_name, output_location, zoom_distance, get_
     for obj in collection.objects:
         if obj.type != 'MESH':
             continue
+        add_background(bg_image_path)
         capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, get_mask)
 
     # Reset the pass index for the objects
@@ -340,4 +377,4 @@ if __name__ == "__main__":
     for label_idx in range(len(categories)):
         # Each category is a collection of meshes in Blender
         collection_name = categories[label_idx]
-        render_loop(label_idx, collection_name, output_location, ZOOM_DISTANCE, GET_MASK)
+        render_loop(label_idx, collection_name, output_location, bg_image_path, ZOOM_DISTANCE, GET_MASK)
