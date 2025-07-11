@@ -6,12 +6,14 @@ import shutil
 import random
 import numpy as np
 
-
+# bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location)
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 4 # Range for X-axis
 Y_RANGE = 4 # Range for Y-axis
 Z_RANGE = 2 # Range for Z-axis
+
+ZOOM_DISTANCE = 2 # Distance to zoom the camera backward from an object
 
 MASK_PASS_IDX = 1 # Pass index for objects we want to generate masks on
 DEFAULT_PASS_IDX = 0 # Default pass index for all other objects
@@ -114,9 +116,6 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
 
         # maps a 3D point in world space into normalized camera view coordinates
         pos = bpy_extras.object_utils.world_to_camera_view(scene, camera, pos)
-
-        print(obj.name)
-        print(pos)
     
         # Update min and max values as needed
         if (pos.x < minX):
@@ -159,15 +158,7 @@ def get_object_mask(obj, scene, output_folder, num_of_view):
 def get_all_object_masks(collection, scene, output_folder):
     pass
 
-def capture_views(obj, label_idx, camera, scene, output_folder, get_mask):
-    # Disable compositor tree
-    '''
-    scene.use_nodes = False
-
-    for obj in collection.objects:
-        if obj.type != 'MESH':
-            continue'''
-
+def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, get_mask):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -181,7 +172,7 @@ def capture_views(obj, label_idx, camera, scene, output_folder, get_mask):
     for i, pos in enumerate(viewpoints):
         # Move camera to position
         camera.location = pos
-
+        
         # Point camera at the object
         direction = center - camera.location
         rot_quat = direction.to_track_quat('-Z', 'Y')
@@ -195,6 +186,10 @@ def capture_views(obj, label_idx, camera, scene, output_folder, get_mask):
         bpy.context.view_layer.update()
         location, foo = camera.camera_fit_coords(depsgraph, coords)
         camera.location = location
+
+        # Zoom out
+        forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
+        camera.location -= forward * zoom_distance
 
         # Save the image
         img_path = rf"{output_folder}\images\{obj.name}_view_{i+1}.jpg"
@@ -274,7 +269,7 @@ def rotate_object(obj):
 
 # === RENDER LOOP FOR EACH COLLECTION ===
 
-def render_loop(label_idx, collection_name, output_location, get_mask, get_all_masks):    
+def render_loop(label_idx, collection_name, output_location, zoom_distance, get_mask):    
     collection = bpy.data.collections.get(collection_name)
     if collection is None:
         print(f"Collection '{collection_name}' not found.")
@@ -296,24 +291,23 @@ def render_loop(label_idx, collection_name, output_location, get_mask, get_all_m
     # - place them randomly or in a specific way? 
     # TODO: add random lighting and shadows (cubes or distractors) to the scene
 
-    # Set the pass index for the objects in the collection if we want to generate masks
-    if get_all_masks:
-        for obj in collection.objects:
-            if obj.type != 'MESH':
-                continue
-        obj.pass_index = MASK_PASS_IDX  
-
     # Add augmentation to objects
     for obj in collection.objects:
         if obj.type != 'MESH':
             continue
 
+        if get_mask:
+            obj.pass_index = MASK_PASS_IDX  
+
         rescale_object(obj, target_size=3.0, eps=1.0)
         translate_object(obj, CENTER, X_RANGE, Y_RANGE, Z_RANGE)
         rotate_object(obj)
 
-        # Capture views for each object
-        capture_views(obj, label_idx, camera, scene, output_folder, get_mask)
+    # Capture views for each object
+    for obj in collection.objects:
+        if obj.type != 'MESH':
+            continue
+        capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, get_mask)
 
     # Reset the pass index for the objects
     for obj in collection.objects:
@@ -346,4 +340,4 @@ if __name__ == "__main__":
     for label_idx in range(len(categories)):
         # Each category is a collection of meshes in Blender
         collection_name = categories[label_idx]
-        render_loop(label_idx, collection_name, output_location, GET_MASK, GET_ALL_MASKS)
+        render_loop(label_idx, collection_name, output_location, ZOOM_DISTANCE, GET_MASK)
