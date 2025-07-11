@@ -8,12 +8,15 @@ import numpy as np
 
 # bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location)
 
-CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
+TRANSLATE_CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 4 # Range for X-axis
 Y_RANGE = 4 # Range for Y-axis
 Z_RANGE = 2 # Range for Z-axis
 
-ZOOM_DISTANCE = 2 # Distance to zoom the camera backward from an object
+SCALE_TARGET_SIZE = 3.0
+SCALE_EPS = 1.0
+
+ZOOM_DISTANCE = 5 # Distance to zoom the camera backward from an object
 
 MASK_PASS_IDX = 1 # Pass index for objects we want to generate masks on
 DEFAULT_PASS_IDX = 0 # Default pass index for all other objects
@@ -30,29 +33,6 @@ scene = bpy.context.scene
 camera = bpy.data.objects["Camera"]
 
 depsgraph = bpy.context.evaluated_depsgraph_get()
-
-
-# === SET UP COMPOSITOR TREE ===
-
-def set_compositor_for_masks():
-    # Enable compositing with nodes
-    scene.use_nodes = True
-    tree = scene.node_tree
-    tree.nodes.clear()
-
-    # Add necessary nodes
-    render_layers = tree.nodes.new(type='CompositorNodeRLayers')    # Render layers
-    id_mask = tree.nodes.new(type='CompositorNodeIDMask')           # ID Mask
-    viewer = tree.nodes.new(type='CompositorNodeViewer')            # Viewer
-    composite = tree.nodes.new(type='CompositorNodeComposite')      # Composite
-
-    # Set Pass Index to match the object
-    id_mask.index = MASK_PASS_IDX
-    
-    # Create Links between nodes
-    tree.links.new(render_layers.outputs['IndexOB'], id_mask.inputs['ID value'])
-    tree.links.new(id_mask.outputs['Alpha'], viewer.inputs['Image'])
-    tree.links.new(id_mask.outputs['Alpha'], composite.inputs['Image'])
 
 
 
@@ -133,7 +113,7 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
 
 # === OBJECTS AUGMENTATION ===
 
-def rescale_object(obj, target_size, eps=0.1, apply=True): 
+def rescale_object(obj, target_size, eps, apply=True): 
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
     
@@ -177,6 +157,29 @@ def rotate_object(obj):
 
 
 
+# === RENDER MASK ===
+
+def set_compositor_for_masks():
+    # Enable compositing with nodes
+    scene.use_nodes = True
+    tree = scene.node_tree
+    tree.nodes.clear()
+
+    # Add necessary nodes
+    render_layers = tree.nodes.new(type='CompositorNodeRLayers')    # Render layers
+    id_mask = tree.nodes.new(type='CompositorNodeIDMask')           # ID Mask
+    viewer = tree.nodes.new(type='CompositorNodeViewer')            # Viewer
+    composite = tree.nodes.new(type='CompositorNodeComposite')      # Composite
+
+    # Set Pass Index to match the object
+    id_mask.index = MASK_PASS_IDX
+    
+    # Create Links between nodes
+    tree.links.new(render_layers.outputs['IndexOB'], id_mask.inputs['ID value'])
+    tree.links.new(id_mask.outputs['Alpha'], viewer.inputs['Image'])
+    tree.links.new(id_mask.outputs['Alpha'], composite.inputs['Image'])
+
+
 
 # === ADD BACKGROUND ===
 
@@ -196,7 +199,6 @@ def add_background(bg_image_path):
     composite_node = tree.nodes.new(type='CompositorNodeComposite')
 
     # Load your image
-    image_path = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\data\background\bg1.jpg"
     bg_image = bpy.data.images.load(bg_image_path)
     bg_image_node.image = bg_image
 
@@ -239,9 +241,6 @@ def get_object_mask(obj, scene, output_folder, num_of_view):
 
     # Disable compositor tree
     scene.use_nodes = False
-
-def get_all_object_masks(collection, scene, output_folder):
-    pass
 
 def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, get_mask):
     # Get bounding box corners in world space
@@ -335,8 +334,8 @@ def render_loop(label_idx, collection_name, output_location, bg_image_path, zoom
         if get_mask:
             obj.pass_index = MASK_PASS_IDX  
 
-        rescale_object(obj, target_size=3.0, eps=1.0)
-        translate_object(obj, CENTER, X_RANGE, Y_RANGE, Z_RANGE)
+        rescale_object(obj, SCALE_TARGET_SIZE, SCALE_EPS)
+        translate_object(obj, TRANSLATE_CENTER, X_RANGE, Y_RANGE, Z_RANGE)
         rotate_object(obj)
 
     # Capture views for each object
@@ -361,7 +360,7 @@ def render_loop(label_idx, collection_name, output_location, bg_image_path, zoom
 
 if __name__ == "__main__":
     # Renderer setup
-    if GET_MASK or GET_ALL_MASKS:
+    if GET_MASK:
         scene.render.engine = 'CYCLES'
         scene.cycles.device = 'GPU'
 
