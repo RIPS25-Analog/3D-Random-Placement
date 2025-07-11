@@ -36,6 +36,11 @@ camera = bpy.data.objects["Camera"]
 
 depsgraph = bpy.context.evaluated_depsgraph_get()
 
+# Set rendering size and scale
+'''scene.render.resolution_x = 800
+scene.render.resolution_y = 600
+scene.render.resolution_percentage = 50'''
+
 
 
 # === DEFINE VIEWPOINTS ===
@@ -61,6 +66,7 @@ def get_viewpoints(center, radius):
 
 def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
     """Returns the 2D bounding box of an object in normalized YOLO format"""
+    bpy.context.view_layer.update()
     matrix = obj.matrix_world
     
     # If use_mesh is True, we will use the mesh vertices, otherwise we will use the bounding box
@@ -188,7 +194,7 @@ def rotate_object(obj):
 
 # === RENDER MASK ===
 
-def set_compositor_for_masks():
+def set_compositor_for_masks(scene):
     # Enable compositing with nodes
     scene.use_nodes = True
     tree = scene.node_tree
@@ -196,9 +202,9 @@ def set_compositor_for_masks():
 
     # Add necessary nodes
     render_layers = tree.nodes.new(type='CompositorNodeRLayers')    # Render layers
+    composite = tree.nodes.new(type='CompositorNodeComposite')      # Composite
     id_mask = tree.nodes.new(type='CompositorNodeIDMask')           # ID Mask
     viewer = tree.nodes.new(type='CompositorNodeViewer')            # Viewer
-    composite = tree.nodes.new(type='CompositorNodeComposite')      # Composite
 
     # Set Pass Index to match the object
     id_mask.index = MASK_PASS_IDX
@@ -212,35 +218,33 @@ def set_compositor_for_masks():
 
 # === ADD BACKGROUND ===
 
-def add_background(bg_image_path):
-    # Ensure you're using the Compositor and nodes are enabled
-    bpy.context.scene.use_nodes = True
-    tree = bpy.context.scene.node_tree
+def add_background(scene, bg_image_path):
+    # Enable compositing with nodes
+    scene.use_nodes = True
+    tree = scene.node_tree
+    tree.nodes.clear()
 
-    # Clear all nodes
-    for node in tree.nodes:
-        tree.nodes.remove(node)
+    nodes = tree.nodes
+    links = tree.links
 
     # Create nodes
-    render_layers = tree.nodes.new(type='CompositorNodeRLayers')
-    bg_image_node = tree.nodes.new(type='CompositorNodeImage')
-    alpha_over = tree.nodes.new(type='CompositorNodeAlphaOver')
-    composite_node = tree.nodes.new(type='CompositorNodeComposite')
+    render_layers = nodes.new(type='CompositorNodeRLayers')
+    composite_node = nodes.new(type='CompositorNodeComposite')
+    bg_image_node = nodes.new(type='CompositorNodeImage')
+    alpha_over = nodes.new(type='CompositorNodeAlphaOver')
+
+    # Set background scale to match the render size
+    scale_node = nodes.new(type='CompositorNodeScale')
+    scale_node.space = 'RENDER_SIZE'
 
     # Load your image
     bg_image = bpy.data.images.load(bg_image_path)
     bg_image_node.image = bg_image
 
-    # Set node locations for neat layout
-    render_layers.location = (0, 300)
-    bg_image_node.location = (0, 0)
-    alpha_over.location = (200, 150)
-    composite_node.location = (400, 150)
-
     # Link nodes
-    links = tree.links
-    links.new(bg_image_node.outputs['Image'], alpha_over.inputs[1])      # Background
-    links.new(render_layers.outputs['Image'], alpha_over.inputs[2])   # Foreground (render)
+    links.new(bg_image_node.outputs['Image'], scale_node.inputs['Image'])
+    links.new(scale_node.outputs['Image'], alpha_over.inputs[1])       # Background
+    links.new(render_layers.outputs['Image'], alpha_over.inputs[2])    # Foreground
     links.new(alpha_over.outputs['Image'], composite_node.inputs['Image'])
 
     # Set render settings for transparency
@@ -334,7 +338,6 @@ def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
                     continue
 
                 # Get bounding box in camera's view
-                bpy.context.view_layer.update()
                 minX, minY, maxX, maxY, depth = get_2d_bounding_box(inner_obj, camera, scene)
                 
                 # Initialize visibility to be False
@@ -357,9 +360,9 @@ def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
                     width = maxX - minX
                     height = maxY - minY
 
-                    # Store label
+                    # Store label {bbox : label}
                     visible_bboxes.update({
-                        inner_obj.name: (x_center, y_center, width, height)
+                        (x_center, y_center, width, height) : label_idx
                     })
 
         print(visible_bboxes)   
@@ -373,11 +376,9 @@ def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
         
         # Save the annotation file
         label_path = rf"{output_folder}\labels\{obj.name}_view_{i+1}.txt"
-
-        # TODO: I nee to fix label_idx hahaaaaaaaa
         
         with open(label_path, "w") as f:
-            for label_idx, bbox in visible_bboxes.items():
+            for bbox, label_idx in visible_bboxes.items():
                 x_center, y_center, width, height = bbox
                 f.write(f"{label_idx} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
         
@@ -427,7 +428,7 @@ def render_loop(collection_name, output_location, bg_image_path, zoom_distance, 
     for obj in collection.objects:
         if obj.type != 'MESH' or obj.hide_render:
             continue
-        add_background(bg_image_path)
+        add_background(scene, bg_image_path)
         capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask)
 
     # Reset the pass index for the objects
