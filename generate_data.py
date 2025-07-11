@@ -13,15 +13,17 @@ X_RANGE = 4 # Range for X-axis
 Y_RANGE = 4 # Range for Y-axis
 Z_RANGE = 2 # Range for Z-axis
 
-SCALE_TARGET_SIZE = 3.0
-SCALE_EPS = 1.0
+SCALE_TARGET_SIZE = 3.0 # Target size for objects after scaling
+SCALE_EPS = 1.0 # Size deviation for randomness
 
-ZOOM_DISTANCE = 5 # Distance to zoom the camera backward from an object
+ZOOM_DISTANCE = 10 # Distance to zoom the camera backward from an object
 
 MASK_PASS_IDX = 1 # Pass index for objects we want to generate masks on
 DEFAULT_PASS_IDX = 0 # Default pass index for all other objects
 
 GET_MASK = False  # Set to True if you want to generate mask for each object the camera focuses on
+
+
 
 # Define output locations
 categories = ["screwdriver"]
@@ -73,9 +75,10 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
     col2 = matrix.col[2]
     col3 = matrix.col[3]
 
-    # Initialize min and max values for 2D bounding box
+    # Initialize min, max, and depth values for 2D bounding box
     minX = minY = 1
     maxX = maxY = 0
+    depth = 0
 
     # Determine the number of vertices to iterate over
     if use_mesh:
@@ -96,7 +99,8 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
 
         # maps a 3D point in world space into normalized camera view coordinates
         pos = bpy_extras.object_utils.world_to_camera_view(scene, camera, pos)
-    
+        depth += pos.z
+
         # Update min and max values as needed
         if (pos.x < minX):
             minX = pos.x
@@ -107,7 +111,32 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
         if (pos.y > maxY):
             maxY = pos.y
 
-    return minX, minY, maxX, maxY
+    # Average out depth
+    depth /= numVertices 
+
+    # Clamp to [0, 1]
+    minX = max(0.0, min(minX, 1.0))
+    minY = max(0.0, min(minY, 1.0))
+    maxX = max(0.0, min(maxX, 1.0))
+    maxY = max(0.0, min(maxY, 1.0))
+
+    return minX, minY, maxX, maxY, depth
+
+
+
+# === CHECK BOX OVERLAPPING ===
+
+def is_overlapping_1D(box1, box2):
+    # (min, max)
+    return box1[1] >= box2[0] and box2[1] >= box1[0]
+
+def is_overlapping_2D(box1, box2):
+    # (minX, minY, maxX, maxY)
+    box1_x = (box1[0], box1[2])
+    box1_y = (box1[1], box1[3])
+    box2_x = (box2[0], box2[2])
+    box2_y = (box2[1], box2[3])
+    return is_overlapping_1D(box1_x, box2_x) and is_overlapping_1D(box1_y, box2_y)
 
 
 
@@ -218,7 +247,8 @@ def add_background(bg_image_path):
     bpy.context.scene.render.film_transparent = True
 
 
-# === RENDER INDIVIDUAL OBJECT ===
+
+# === RENDER OBJECTS ===
 
 def get_object_mask(obj, scene, output_folder, num_of_view):
     # Enable compositor tree
@@ -242,7 +272,12 @@ def get_object_mask(obj, scene, output_folder, num_of_view):
     # Disable compositor tree
     scene.use_nodes = False
 
-def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, get_mask):
+def traverse_tree(t):
+    yield t
+    for child in t.children:
+        yield from traverse_tree(child)
+
+def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -250,7 +285,10 @@ def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, g
     center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
     max_dist = max((corner - center).length for corner in bbox_corners)
 
+    # Get a list of camera positions
     viewpoints = get_viewpoints(center, max_dist)
+
+    print("Taking photos around " + obj.name + " --------------------\n")
 
     # Iterate through all viewpoints around one object
     for i, pos in enumerate(viewpoints):
@@ -271,9 +309,60 @@ def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, g
         location, foo = camera.camera_fit_coords(depsgraph, coords)
         camera.location = location
 
-        # Zoom out
+        # Zoom away from the object
         forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
         camera.location -= forward * zoom_distance
+
+        visible_bboxes = dict()
+        col_tree = scene.collection
+
+        # Iterate through all collections
+        #TODO: for i in range(len(categories))
+        for col in traverse_tree(col_tree):
+            for inner_obj in col.objects:
+                # Skip uninterested objects
+                if inner_obj.type != 'MESH' or inner_obj.hide_render:
+                    continue
+
+                print("Checking visibility of " + inner_obj.name + ": ", end="")
+
+                label_idx = categories.index(col.name)
+
+                # Skip objects that has no category
+                if label_idx is None:
+                    print("Found object that's not supposed to be labeled: " + inner_obj.name)
+                    continue
+
+                # Get bounding box in camera's view
+                bpy.context.view_layer.update()
+                minX, minY, maxX, maxY, depth = get_2d_bounding_box(inner_obj, camera, scene)
+                
+                # Initialize visibility to be False
+                is_visible = False
+
+                # Check visibility from camera
+                if depth > 0:
+                    bbox = (minX, minY, maxX, maxY)
+                    eps = 0.1
+                    cam_box = (0 + eps, 0 + eps, 1 - eps, 1 - eps)
+
+                    is_visible = is_overlapping_2D(bbox, cam_box)
+
+                if is_visible:
+                    print("visible")
+
+                    # Convert to YOLO format
+                    x_center = (minX + maxX) / 2
+                    y_center = 1 - (minY + maxY) / 2 # flip y-axis
+                    width = maxX - minX
+                    height = maxY - minY
+
+                    # Store label
+                    visible_bboxes.update({
+                        inner_obj.name: (x_center, y_center, width, height)
+                    })
+
+        print(visible_bboxes)   
 
         # Save the image
         img_path = rf"{output_folder}\images\{obj.name}_view_{i+1}.jpg"
@@ -282,21 +371,17 @@ def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, g
         scene.render.filepath = img_path
         bpy.ops.render.render(write_still=True)
         
-        # Get bounding box in camera's view
-        minX, minY, maxX, maxY = get_2d_bounding_box(obj, camera, scene)
-
-        # Convert to YOLO format
-        x_center = (minX + maxX) / 2
-        y_center = 1 - (minY + maxY) / 2 # flip y-axis
-        width = maxX - minX
-        height = maxY - minY
-        
         # Save the annotation file
         label_path = rf"{output_folder}\labels\{obj.name}_view_{i+1}.txt"
-        with open(label_path, "w") as f:
-            f.write(f"{label_idx} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+
+        # TODO: I nee to fix label_idx hahaaaaaaaa
         
-        # Save the object mask if needed
+        with open(label_path, "w") as f:
+            for label_idx, bbox in visible_bboxes.items():
+                x_center, y_center, width, height = bbox
+                f.write(f"{label_idx} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+        
+        # Save the mask
         if get_mask:
             get_object_mask(obj, scene, output_folder, i+1)
 
@@ -304,7 +389,7 @@ def capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, g
 
 # === RENDER LOOP FOR EACH COLLECTION ===
 
-def render_loop(label_idx, collection_name, output_location, bg_image_path, zoom_distance, get_mask):    
+def render_loop(collection_name, output_location, bg_image_path, zoom_distance, get_mask):    
     collection = bpy.data.collections.get(collection_name)
     if collection is None:
         print(f"Collection '{collection_name}' not found.")
@@ -328,7 +413,7 @@ def render_loop(label_idx, collection_name, output_location, bg_image_path, zoom
 
     # Add augmentation to objects
     for obj in collection.objects:
-        if obj.type != 'MESH':
+        if obj.type != 'MESH' or obj.hide_render:
             continue
 
         if get_mask:
@@ -340,14 +425,14 @@ def render_loop(label_idx, collection_name, output_location, bg_image_path, zoom
 
     # Capture views for each object
     for obj in collection.objects:
-        if obj.type != 'MESH':
+        if obj.type != 'MESH' or obj.hide_render:
             continue
         add_background(bg_image_path)
-        capture_views(obj, label_idx, camera, scene, output_folder, zoom_distance, get_mask)
+        capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask)
 
     # Reset the pass index for the objects
     for obj in collection.objects:
-        if obj.type != 'MESH':
+        if obj.type != 'MESH' or obj.hide_render:
             continue
         obj.pass_index = DEFAULT_PASS_IDX  
 
@@ -373,7 +458,7 @@ if __name__ == "__main__":
         scene.render.engine = 'BLENDER_EEVEE_NEXT'
     
     # Generate images for each category
-    for label_idx in range(len(categories)):
+    for i in range(len(categories)):
         # Each category is a collection of meshes in Blender
-        collection_name = categories[label_idx]
-        render_loop(label_idx, collection_name, output_location, bg_image_path, ZOOM_DISTANCE, GET_MASK)
+        collection_name = categories[i]
+        render_loop(collection_name, output_location, bg_image_path, ZOOM_DISTANCE, GET_MASK)

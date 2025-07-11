@@ -13,7 +13,7 @@ collection = bpy.data.collections["screwdriver"]
 
 depsgraph = bpy.context.evaluated_depsgraph_get()
 output_folder = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\test"
-zoom_distance = 5
+zoom_distance = 10 #new
 
 def get_viewpoints(center, radius):
     viewpoints = []
@@ -49,6 +49,7 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
     # Initialize min and max values for 2D bounding box
     minX = minY = 1
     maxX = maxY = 0
+    z = 0 #new 
 
     # Determine the number of vertices to iterate over
     if use_mesh:
@@ -80,7 +81,15 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
         if (pos.y > maxY):
             maxY = pos.y
 
-    return minX, minY, maxX, maxY
+        z += pos.z #new
+
+    z /= numVertices #new
+    minX = max(0.0, min(minX, 1.0))
+    minY = max(0.0, min(minY, 1.0))
+    maxX = max(0.0, min(maxX, 1.0))
+    maxY = max(0.0, min(maxY, 1.0))
+
+    return minX, minY, maxX, maxY, z #new
 
 
 
@@ -97,7 +106,8 @@ def is_overlapping_2D(box1, box2):
     box2_y = (box2[1], box2[3])
     return is_overlapping_1D(box1_x, box2_x) and is_overlapping_1D(box1_y, box2_y)
 
-
+scene.use_nodes = True
+os.makedirs(rf"{output_folder}\labels", exist_ok=True)
 
 for obj in collection.objects:
 
@@ -135,47 +145,54 @@ for obj in collection.objects:
 
 
         label = dict()
+
         for obj2 in collection.objects:
             name = obj2.name
             mesh = obj2.data
 
-            numVertices = len(obj.data.vertices)
+            # Get bounding box in camera's view
+            bpy.context.view_layer.update()
+            minX, minY, maxX, maxY, z = get_2d_bounding_box(obj2, camera, scene)
+            
+            is_visible = False
 
-            bbox = get_2d_bounding_box(obj2, camera, scene)
-            print(obj2.name)
-            print(bbox)
+            if z > 0:
+                bbox = (minX, minY, maxX, maxY)
+                eps = 0.1
+                cam_box = (0 + eps, 0 + eps, 1 - eps, 1 - eps)
 
-            cam_box = (0, 0, 1, 1)
+                is_visible = is_overlapping_2D(bbox, cam_box)
 
-            # minX, minY, maxX, maxY
-            is_visible = is_overlapping_2D(bbox, cam_box)
-            print(is_visible)
+            if is_visible:
+                # Convert to YOLO format
+                x_center = (minX + maxX) / 2
+                y_center = 1 - (minY + maxY) / 2 # flip y-axis
+                width = maxX - minX
+                height = maxY - minY
 
-            label.update({
-                name: str(is_visible).lower()
-            })
+                label.update({
+                    name: (x_center, y_center, width, height)
+                })
 
-        img_name = ', '.join(f'{k} - {v}' for k, v in label.items())
-        img_name = ''
-
-
-
-
-
+        #img_name = ', '.join(f'{k} - {v}' for k, v in label.items())
 
         # Save the image
-        img_path = rf"{output_folder}\images\{obj.name}_view_{i+1}.jpg"
+        img_path = rf"{output_folder}\images\{obj.name}_{i+1}.jpg" #new
         scene.render.image_settings.file_format = 'JPEG'
         scene.render.image_settings.color_mode = 'RGB'
         scene.render.filepath = img_path
         bpy.ops.render.render(write_still=True)
-        
-        # Get bounding box in camera's view
-        minX, minY, maxX, maxY = get_2d_bounding_box(obj, camera, scene)
 
-        # Convert to YOLO format
-        x_center = (minX + maxX) / 2
-        y_center = 1 - (minY + maxY) / 2 # flip y-axis
-        width = maxX - minX
-        height = maxY - minY
+
+
+
+        # Save the annotation file
+        label_path = rf"{output_folder}\labels\{obj.name}_{i+1}.txt" #new
+        
+        with open(label_path, "w") as f:
+            for obj2 in collection.objects:
+                temp = label.get(obj2.name)
+                if temp != None:
+                    x_center, y_center, width, height = temp
+                    f.write(f"{0} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
             
