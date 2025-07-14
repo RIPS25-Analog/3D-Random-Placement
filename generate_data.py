@@ -6,7 +6,7 @@ import shutil
 import random
 import numpy as np
 
-# bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location)
+# bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
 
 TRANSLATE_CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 4 # Range for X-axis
@@ -14,7 +14,7 @@ Y_RANGE = 4 # Range for Y-axis
 Z_RANGE = 2 # Range for Z-axis
 
 SCALE_TARGET_SIZE = 3.0 # Target size for objects after scaling
-SCALE_EPS = 1.0 # Size deviation for randomness
+SCALE_EPS = 0.2 # Size deviation for randomness
 
 ZOOM_DISTANCE = 10 # Distance to zoom the camera backward from an object
 
@@ -27,8 +27,8 @@ GET_MASK = False  # Set to True if you want to generate mask for each object the
 
 # Define output locations
 categories = ["screwdriver"]
-output_location = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\data"
-bg_image_path = r"C:\Users\xlmq4\Documents\GitHub\3D_Data_Generation\data\background\bg1.jpg"
+output_location = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
+bg_image_path = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background\bg1.jpg"
 
 # Initial setups
 scene = bpy.context.scene
@@ -252,6 +252,49 @@ def add_background(scene, bg_image_path):
 
 
 
+def add_hdri_background(scene):
+    world = scene.world
+    world.use_nodes = True
+    nodes = world.node_tree.nodes
+    links = world.node_tree.links
+
+    hdri_path = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri\IndoorEnvironment.exr"
+
+    # === CLEAR EXISTING NODES ===
+    nodes.clear()
+
+    # === CREATE NODES ===
+    env_tex = nodes.new(type="ShaderNodeTexEnvironment")
+    env_tex.image = bpy.data.images.load(hdri_path)
+    env_tex.location = (-800, 0)
+
+    background = nodes.new(type="ShaderNodeBackground")
+    background.location = (-400, 0)
+
+    world_output = nodes.new(type="ShaderNodeOutputWorld")
+    world_output.location = (0, 0)
+
+    # === LINK NODES ===
+    links.new(env_tex.outputs["Color"], background.inputs["Color"])
+    links.new(background.outputs["Background"], world_output.inputs["Surface"])
+
+    # === OPTIONAL: ROTATE HDRI ===
+    # Add Texture Coordinate and Mapping nodes
+    tex_coord = nodes.new(type="ShaderNodeTexCoord")
+    tex_coord.location = (-1200, 0)
+
+    mapping = nodes.new(type="ShaderNodeMapping")
+    mapping.location = (-1000, 0)
+    mapping.inputs['Rotation'].default_value[2] = 1.57  # Rotate around Z (in radians)
+
+    # Link coordinate chain
+    links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
+    links.new(mapping.outputs["Vector"], env_tex.inputs["Vector"])
+
+    scene.render.film_transparent = False
+
+
+
 # === RENDER OBJECTS ===
 
 def get_object_mask(obj, scene, output_folder, num_of_view):
@@ -323,6 +366,10 @@ def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
         # Iterate through all collections
         #TODO: for i in range(len(categories))
         for col in traverse_tree(col_tree):
+            if col.name not in categories:
+                continue
+
+            # Iterate through all objects inside one collection
             for inner_obj in col.objects:
                 # Skip uninterested objects
                 if inner_obj.type != 'MESH' or inner_obj.hide_render:
@@ -331,11 +378,10 @@ def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
                 print("Checking visibility of " + inner_obj.name + ": ", end="")
 
                 label_idx = categories.index(col.name)
-
-                # Skip objects that has no category
-                if label_idx is None:
+                
+                '''if label_idx is None:
                     print("Found object that's not supposed to be labeled: " + inner_obj.name)
-                    continue
+                    continue'''
 
                 # Get bounding box in camera's view
                 minX, minY, maxX, maxY, depth = get_2d_bounding_box(inner_obj, camera, scene)
@@ -364,8 +410,6 @@ def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
                     visible_bboxes.update({
                         (x_center, y_center, width, height) : label_idx
                     })
-
-        print(visible_bboxes)   
 
         # Save the image
         img_path = rf"{output_folder}\images\{obj.name}_view_{i+1}.jpg"
@@ -428,7 +472,7 @@ def render_loop(collection_name, output_location, bg_image_path, zoom_distance, 
     for obj in collection.objects:
         if obj.type != 'MESH' or obj.hide_render:
             continue
-        add_background(scene, bg_image_path)
+        #add_background(scene, bg_image_path)
         capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask)
 
     # Reset the pass index for the objects
@@ -458,6 +502,8 @@ if __name__ == "__main__":
     else:
         scene.render.engine = 'BLENDER_EEVEE_NEXT'
     
+    add_hdri_background(scene)
+
     # Generate images for each category
     for i in range(len(categories)):
         # Each category is a collection of meshes in Blender
