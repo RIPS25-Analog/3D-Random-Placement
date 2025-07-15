@@ -13,28 +13,13 @@ X_RANGE = 4 # Range for X-axis
 Y_RANGE = 4 # Range for Y-axis
 Z_RANGE = 2 # Range for Z-axis
 
-SCALE_TARGET_SIZE = 3.0 # Target size for objects after scaling
-SCALE_EPS = 0.2 # Size deviation for randomness
+'''SCREWDRIVER_TARGET_SIZE = 0.2 # Target size for objects after scaling
+SCREWDRIVER_EPS = 0.05 # Size deviation for randomness'''
 
 ZOOM_DISTANCE = 10 # Distance to zoom the camera backward from an object
 
-
-
-# Define output locations
-categories = ["screwdriver"]
-output_location = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
-bg_image_path = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background\bg1.jpg"
-
-# Initial setups
-scene = bpy.context.scene
-camera = bpy.data.objects["Camera"]
-
-depsgraph = bpy.context.evaluated_depsgraph_get()
-
-# Set rendering size and scale
-'''scene.render.resolution_x = 800
-scene.render.resolution_y = 600
-scene.render.resolution_percentage = 50'''
+OUTPUT_LOCATION = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
+CATEGORIES = ["screwdriver", "wrench"]
 
 
 
@@ -143,7 +128,7 @@ def is_overlapping_2D(box1, box2):
 
 # === OBJECTS AUGMENTATION ===
 
-def rescale_object(obj, target_size, eps, apply=True): 
+'''def rescale_object(obj, target_size, eps, apply=True): 
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
     
@@ -166,7 +151,7 @@ def rescale_object(obj, target_size, eps, apply=True):
     if apply:
         # Apply the scale to avoid future issues
         bpy.context.view_layer.update()  # update for bbox recalculation
-        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)'''
 
 def translate_object(obj, center, x_range, y_range, z_range):
     x = random.uniform(center.x - x_range, center.x + x_range)
@@ -187,6 +172,7 @@ def rotate_object(obj):
 
 
 
+# === ADD BACKGROUND ===
 def add_hdri_background(scene):
     world = scene.world
     world.use_nodes = True
@@ -237,7 +223,7 @@ def traverse_tree(t):
     for child in t.children:
         yield from traverse_tree(child)
 
-def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
+def capture_views(obj, camera, scene, depsgraph, categories, output_folder, zoom_distance):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -341,70 +327,67 @@ def capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask):
 
 
 
-# === RENDER LOOP FOR EACH COLLECTION ===
+# === RENDER LOOP ===
 
-def render_loop(collection_name, output_location, bg_image_path, zoom_distance, get_mask):    
-    collection = bpy.data.collections.get(collection_name)
-    if collection is None:
-        print(f"Collection '{collection_name}' not found.")
-        return
+def render_loop():
+    # Initial setups
+    scene = bpy.context.scene
+    camera = bpy.data.objects["Camera"]
+    render = scene.render
+
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
+    # Renderer setup
+    render.engine = 'BLENDER_EEVEE_NEXT'
+
+    # Set rendering size and scale
+    '''render.resolution_x = 800
+    render.resolution_y = 600
+    render.resolution_percentage = 50'''
     
-    # Create output folder for a category
-    output_folder = os.path.join(output_location, collection_name)
-    while os.path.exists(output_folder):
-        output_folder = output_folder + "_new"
-    os.makedirs(output_folder)
+    # Generate images for each category
+    for i in range(len(CATEGORIES)):
+        # Obejct of each category is stored under a collection with the same name
+        collection_name = CATEGORIES[i]
+        collection = bpy.data.collections.get(collection_name)
 
-    # Make subfolders
-    for subfolder in ["images", "labels"]:
-        folder_path = os.path.join(output_folder, subfolder)
-        os.makedirs(folder_path, exist_ok=True)
+        if collection is None:
+            print(f"Collection '{collection_name}' not found.")
+            return
+        
+        # Create output folder for a category
+        output_folder = os.path.join(OUTPUT_LOCATION, collection_name)
+        while os.path.exists(output_folder):
+            output_folder = output_folder + "_new"
+        os.makedirs(output_folder)
 
-    # TODO: set up how many times we want to augment the objects for each collection
-    # TODO: do we want distractors? 
-    # - place them randomly or in a specific way? 
-    # TODO: add random lighting and shadows (cubes or distractors) to the scene
+        # Make subfolders
+        for subfolder in ["images", "labels"]:
+            folder_path = os.path.join(output_folder, subfolder)
+            os.makedirs(folder_path, exist_ok=True)
 
-    # Add augmentation to objects
-    for obj in collection.objects:
-        if obj.type != 'MESH' or obj.hide_render:
-            continue
+        # TODO: set up how many times we want to augment the objects for each collection
+        # TODO: add random lighting and shadows (cubes or distractors) to the scene
 
-        if get_mask:
-            obj.pass_index = MASK_PASS_IDX  
+        # Add augmentation to objects
+        for obj in collection.objects:
+            if obj.type != 'MESH' or obj.hide_render:
+                continue
 
-        rescale_object(obj, SCALE_TARGET_SIZE, SCALE_EPS)
-        translate_object(obj, TRANSLATE_CENTER, X_RANGE, Y_RANGE, Z_RANGE)
-        rotate_object(obj)
+            #rescale_object(obj, SCALE_TARGET_SIZE, SCALE_EPS)
+            translate_object(obj, TRANSLATE_CENTER, X_RANGE, Y_RANGE, Z_RANGE)
+            rotate_object(obj)
 
-    # Capture views for each object
-    for obj in collection.objects:
-        if obj.type != 'MESH' or obj.hide_render:
-            continue
-        #add_background(scene, bg_image_path)
-        capture_views(obj, camera, scene, output_folder, zoom_distance, get_mask)
-
-    # Reset the pass index for the objects
-    for obj in collection.objects:
-        if obj.type != 'MESH' or obj.hide_render:
-            continue
-        obj.pass_index = DEFAULT_PASS_IDX  
-
-    # TODO: set up camera positions and take photos from multiple viewpoints
-    # TODO: generate masks for all objects in the scene if GET_ALL_MASKS is True
+        # Capture views for each object
+        for obj in collection.objects:
+            if obj.type != 'MESH' or obj.hide_render:
+                continue
+            add_hdri_background(scene)
+            capture_views(obj, camera, scene, depsgraph, CATEGORIES, output_folder, ZOOM_DISTANCE)
 
 
 
 # === MAIN ===
 
 if __name__ == "__main__":
-    # Renderer setup
-    scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    
-    add_hdri_background(scene)
-
-    # Generate images for each category
-    for i in range(len(categories)):
-        # Each category is a collection of meshes in Blender
-        collection_name = categories[i]
-        render_loop(collection_name, output_location, bg_image_path, ZOOM_DISTANCE, GET_MASK)
+    render_loop()
