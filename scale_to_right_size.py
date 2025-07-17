@@ -2,7 +2,7 @@ import bpy
 import mathutils
 import random
 
-obj = bpy.context.object["metarig"]
+obj = bpy.data.objects["metarig"]
 origin = obj.matrix_world.translation
 TRANSLATE_CENTER = mathutils.Vector(origin) 
 
@@ -10,7 +10,7 @@ X_RANGE = 0.4 # Range for X-axis
 Y_RANGE = 0.4 # Range for Y-axis
 Z_RANGE = 0.2 # Range for Z-axis
 
-TARGET_SIZE = 0.3 
+TARGET_SIZE = 0.2 
 EPS = 0.05 
 
 ZOOM_DISTANCE = 10 # Distance to zoom the camera backward from an object
@@ -60,9 +60,9 @@ if my_collection:
         # Example: select the object
         obj.select_set(True)
         
-        translate_object(obj, TRANSLATE_CENTER, X_RANGE, Y_RANGE, Z_RANGE)
+        #translate_object(obj, TRANSLATE_CENTER, X_RANGE, Y_RANGE, Z_RANGE)
         
-        rescale_object(obj, SCALE_TARGET_SIZE, SCALE_EPS, apply=True)
+        rescale_object(obj, TARGET_SIZE, EPS, apply=True)
 else:
     print(f"Collection '{collection_name}' not found.")
     

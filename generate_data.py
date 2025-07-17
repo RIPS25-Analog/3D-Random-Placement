@@ -5,25 +5,36 @@ import os
 import shutil
 import random
 import numpy as np
+import glob
 
+# Magic debug code line :)))))
 # bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
 
-TRANSLATE_CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
-X_RANGE = 4 # Range for X-axis
-Y_RANGE = 4 # Range for Y-axis
-Z_RANGE = 2 # Range for Z-axis
+ITERATION = 2
+SAVE_FILES = True # Set false for testing stage
+RENDER_PERCENTAGE = 50 # Original size is 1920 x 1080
 
-'''SCREWDRIVER_TARGET_SIZE = 0.2 # Target size for objects after scaling
-SCREWDRIVER_EPS = 0.05 # Size deviation for randomness'''
+CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
+X_RANGE = 0.4 # Range for X-axis
+Y_RANGE = 0.4 # Range for Y-axis
+Z_RANGE = 0.2 # Range for Z-axis
 
-ZOOM_DISTANCE = 10 # Distance to zoom the camera backward from an object
+NUM_OBJ = 6
+NUM_DISTRACTOR = 3
+NUM_GEO = 10 
 
-OUTPUT_LOCATION = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
+TARGET_SIZE = 0.2 # Target size for objects after scaling
+EPS = 0.05 # Size deviation for randomness
+
+ZOOM_DISTANCE = 1 # Distance to zoom the camera backward from an object
+
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
+HDRI_PATH_COL = glob.glob(r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri\*.exr")
 CATEGORIES = ["screwdriver", "wrench"]
 
 
 
-# === DEFINE VIEWPOINTS ===
+# === DEFINE CAMERA BEHAVIOR ===
 
 def get_viewpoints(center, radius):
     viewpoints = []
@@ -40,22 +51,50 @@ def get_viewpoints(center, radius):
     
     return viewpoints
 
+def zoom_on_object(camera, center, bbox_corners, depsgraph):
+    # Point camera at the object
+    direction = center - camera.location
+    rot_quat = direction.to_track_quat('-Z', 'Y')
+    camera.rotation_euler = rot_quat.to_euler()
+
+    # Get object 3D bounding box
+    coords = [coord for corner in bbox_corners for coord in corner]
+    
+    # Zoom to where the entire object will fit in view
+    bpy.context.view_layer.update()
+    location, _scale = camera.camera_fit_coords(depsgraph, coords)
+    camera.location = location
+
+    # Zoom away from the object
+    forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
+    camera.location -= forward * ZOOM_DISTANCE
+
 
 
 # === GET BOUNDING BOXES ===
 
-def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
-    """Returns the 2D bounding box of an object in normalized YOLO format"""
+def is_obscured(scene, depsgraph, origin, destination):
+    # get the direction
+    direction = (destination - origin)
+    distance = direction.length
+    direction = direction.normalized()
+
+    # Add small offset distance to avoid colliding with itself
+    offset = 0.01  
+    origin = origin + direction * offset
+
+    # cast a ray from origin to destination
+    hit_bool, _location, _normal, _index, _hit_obj, _matrix = scene.ray_cast(depsgraph, origin, direction, distance=distance)
+
+    return hit_bool
+
+
+def get_2d_bounding_box(obj, camera, scene, depsgraph):
+    # Update view layer to get the most recent coordinates
     bpy.context.view_layer.update()
-    matrix = obj.matrix_world
-    
-    # If use_mesh is True, we will use the mesh vertices, otherwise we will use the bounding box
-    if use_mesh:
-        mesh = obj.data
-    else:
-        mesh = obj.bound_box
     
     # Get the transformation matrix columns
+    matrix = obj.matrix_world
     col0 = matrix.col[0]
     col1 = matrix.col[1]
     col2 = matrix.col[2]
@@ -67,21 +106,29 @@ def get_2d_bounding_box(obj, camera, scene, use_mesh=True):
     depth = 0
 
     # Determine the number of vertices to iterate over
-    if use_mesh:
-        numVertices = len(obj.data.vertices)
-    else:
-        numVertices = len(mesh)
+    mesh = obj.data
+    numVertices = len(mesh.vertices)
+
+    vertices_world_pos = []
     
-    # Iterate through each vertex
     for t in range(0, numVertices):
         # Get the vertex position
-        if use_mesh:
-            co = mesh.vertices[t].co
-        else:
-            co = mesh[t]
+        co = mesh.vertices[t].co
 
         # WorldPos = X - axis⋅x + Y- axis⋅y + Z - axis⋅z + Translation
-        pos = (col0 * co[0]) + (col1 * co[1]) + (col2 * co[2]) + col3
+        pos_hom = (col0 * co[0]) + (col1 * co[1]) + (col2 * co[2]) + col3
+        pos = mathutils.Vector(pos_hom[:3])
+        
+        # Get the vertices that are visible from the camera
+        if not is_obscured(scene, depsgraph, pos, camera.location):
+            vertices_world_pos.append(pos)
+
+    # Almost totally occluded, return invalid bounding boxes
+    if len(vertices_world_pos) <= 1:
+        return 0, 0, 0, 0, -1
+    
+    # Iterate through each vertex
+    for pos in vertices_world_pos:
 
         # maps a 3D point in world space into normalized camera view coordinates
         pos = bpy_extras.object_utils.world_to_camera_view(scene, camera, pos)
@@ -128,7 +175,7 @@ def is_overlapping_2D(box1, box2):
 
 # === OBJECTS AUGMENTATION ===
 
-'''def rescale_object(obj, target_size, eps, apply=True): 
+def rescale_object(obj, apply=True): 
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
     
@@ -140,7 +187,7 @@ def is_overlapping_2D(box1, box2):
     # Find largest dimension (width, height, depth)
     current_size = max(dimensions)
 
-    final_size = target_size + random.uniform(-eps, eps)
+    final_size = TARGET_SIZE + random.uniform(-EPS, EPS)
 
     # Compute scale factor
     scale_factor = final_size / current_size
@@ -151,12 +198,12 @@ def is_overlapping_2D(box1, box2):
     if apply:
         # Apply the scale to avoid future issues
         bpy.context.view_layer.update()  # update for bbox recalculation
-        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)'''
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
-def translate_object(obj, center, x_range, y_range, z_range):
-    x = random.uniform(center.x - x_range, center.x + x_range)
-    y = random.uniform(center.y - y_range, center.y + y_range)
-    z = random.uniform(center.z - z_range, center.z + z_range)
+def translate_object(obj):
+    x = random.uniform(CENTER.x - X_RANGE, CENTER.x + X_RANGE)
+    y = random.uniform(CENTER.y - Y_RANGE, CENTER.y + Y_RANGE)
+    z = random.uniform(CENTER.z - Z_RANGE, CENTER.z + Z_RANGE)
     obj.location = (x, y, z)
 
 def rotate_object(obj):
@@ -173,13 +220,16 @@ def rotate_object(obj):
 
 
 # === ADD BACKGROUND ===
+
 def add_hdri_background(scene):
     world = scene.world
     world.use_nodes = True
     nodes = world.node_tree.nodes
     links = world.node_tree.links
 
-    hdri_path = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri\IndoorEnvironment.exr"
+    hdri_path = random.choice(HDRI_PATH_COL)
+
+    print(f"Chosen backgroundd: {hdri_path}")
 
     # === CLEAR EXISTING NODES ===
     nodes.clear()
@@ -216,14 +266,83 @@ def add_hdri_background(scene):
 
 
 
-# === RENDER OBJECTS ===
+# === ARRANGE AND RENDER OBJECTS ===
 
-def traverse_tree(t):
-    yield t
-    for child in t.children:
-        yield from traverse_tree(child)
+def get_selected_objects():
+    all_objects = [] # (obj, label)
+    all_distractors = [] # (obj, label)
 
-def capture_views(obj, camera, scene, depsgraph, categories, output_folder, zoom_distance):
+    # Select all objects from the scene
+    for col_name in CATEGORIES:
+        cur_col = bpy.data.collections[col_name]
+        for obj in cur_col.objects:
+            if obj.type == 'MESH':
+                #obj.hide_render = True
+                all_objects.append((obj, col_name))
+
+    # Select all distractors from the scene
+    distractors = bpy.data.collections["distractors"]
+    for distractor in distractors.objects:
+        if distractor.type == 'MESH':
+            distractor.hide_render = True
+            all_distractors.append((distractor, "distractors"))
+
+    # Randomly select some of the objects
+    selected_objects = random.sample(all_objects, min(NUM_OBJ, len(all_objects)))
+    selected_distractors = random.sample(all_distractors, min(NUM_DISTRACTOR, len(all_distractors)))
+
+    for obj, _label in selected_objects + selected_distractors:
+        obj.hide_render = False
+
+        # Add augmentation to both target objects and distractors
+        #rescale_object(obj)
+        translate_object(obj)
+        rotate_object(obj)
+
+    return selected_objects
+
+def get_visible_bbox(scene, camera, depsgraph, selected_objects):
+    visible_bboxes = dict()
+
+    for obj, label in selected_objects:
+        print("Checking visibility of " + obj.name + ": ", end="")
+
+        # Get label_idx
+        label_idx = CATEGORIES.index(label)
+
+        # Get bounding box in camera's view
+        minX, minY, maxX, maxY, depth = get_2d_bounding_box(obj, camera, scene, depsgraph)
+        
+        # Initialize visibility to be False
+        is_visible = False
+
+        # Check visibility from camera
+        if depth > 0:
+            bbox = (minX, minY, maxX, maxY)
+            offset = 0.05
+            cam_box = (0 + offset, 0 + offset, 1 - offset, 1 - offset)
+
+            is_visible = is_overlapping_2D(bbox, cam_box)
+
+        if is_visible:
+            print("visible")
+
+            # Convert to YOLO format
+            x_center = (minX + maxX) / 2
+            y_center = 1 - (minY + maxY) / 2 # flip y-axis
+            width = maxX - minX
+            height = maxY - minY
+
+            # Store label {bbox : label}
+            visible_bboxes.update({
+                (x_center, y_center, width, height) : label_idx
+            })
+        else:
+            print("not visible")
+
+    return visible_bboxes
+
+def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, iter):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -234,160 +353,78 @@ def capture_views(obj, camera, scene, depsgraph, categories, output_folder, zoom
     # Get a list of camera positions
     viewpoints = get_viewpoints(center, max_dist)
 
-    print("Taking photos around " + obj.name + " --------------------\n")
-
+    print(f"\n-------------------- Taking photos around {obj.name} --------------------\n")
+    
     # Iterate through all viewpoints around one object
     for i, pos in enumerate(viewpoints):
         # Move camera to position
         camera.location = pos
+        zoom_on_object(camera, center, bbox_corners, depsgraph)
+
+        print(f"-------------------- View angle {i} --------------------")
         
-        # Point camera at the object
-        direction = center - camera.location
-        rot_quat = direction.to_track_quat('-Z', 'Y')
-        camera.rotation_euler = rot_quat.to_euler()
+        # Get bounding boxes for visible objects
+        visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects)
 
-        # Get object 3D bounding box
-        corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
-        coords = [coord for corner in corners for coord in corner]
-        
-        # Zoom to where the entire object will fit in view
-        bpy.context.view_layer.update()
-        location, foo = camera.camera_fit_coords(depsgraph, coords)
-        camera.location = location
+        if SAVE_FILES:
+            # Save the image
+            img_path = rf"{output_folder}\images\{iter}_{obj.name}_{i+1}.jpg"
+            scene.render.image_settings.file_format = 'JPEG'
+            scene.render.image_settings.color_mode = 'RGB'
+            scene.render.filepath = img_path
+            bpy.ops.render.render(write_still=True)
+            
+            # Save the annotation file
+            label_path = rf"{output_folder}\labels\{iter}_{obj.name}_{i+1}.txt"
+            
+            with open(label_path, "w") as f:
+                for bbox, label_idx in visible_bboxes.items():
+                    x_center, y_center, width, height = bbox
+                    f.write(f"{label_idx} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
-        # Zoom away from the object
-        forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
-        camera.location -= forward * zoom_distance
-
-        visible_bboxes = dict()
-        col_tree = scene.collection
-
-        # Iterate through all collections
-        #TODO: for i in range(len(categories))
-        for col in traverse_tree(col_tree):
-            if col.name not in categories:
-                continue
-
-            # Iterate through all objects inside one collection
-            for inner_obj in col.objects:
-                # Skip uninterested objects
-                if inner_obj.type != 'MESH' or inner_obj.hide_render:
-                    continue
-
-                print("Checking visibility of " + inner_obj.name + ": ", end="")
-
-                label_idx = categories.index(col.name)
-                
-                '''if label_idx is None:
-                    print("Found object that's not supposed to be labeled: " + inner_obj.name)
-                    continue'''
-
-                # Get bounding box in camera's view
-                minX, minY, maxX, maxY, depth = get_2d_bounding_box(inner_obj, camera, scene)
-                
-                # Initialize visibility to be False
-                is_visible = False
-
-                # Check visibility from camera
-                if depth > 0:
-                    bbox = (minX, minY, maxX, maxY)
-                    eps = 0.1
-                    cam_box = (0 + eps, 0 + eps, 1 - eps, 1 - eps)
-
-                    is_visible = is_overlapping_2D(bbox, cam_box)
-
-                if is_visible:
-                    print("visible")
-
-                    # Convert to YOLO format
-                    x_center = (minX + maxX) / 2
-                    y_center = 1 - (minY + maxY) / 2 # flip y-axis
-                    width = maxX - minX
-                    height = maxY - minY
-
-                    # Store label {bbox : label}
-                    visible_bboxes.update({
-                        (x_center, y_center, width, height) : label_idx
-                    })
-
-        # Save the image
-        img_path = rf"{output_folder}\images\{obj.name}_view_{i+1}.jpg"
-        scene.render.image_settings.file_format = 'JPEG'
-        scene.render.image_settings.color_mode = 'RGB'
-        scene.render.filepath = img_path
-        bpy.ops.render.render(write_still=True)
-        
-        # Save the annotation file
-        label_path = rf"{output_folder}\labels\{obj.name}_view_{i+1}.txt"
-        
-        with open(label_path, "w") as f:
-            for bbox, label_idx in visible_bboxes.items():
-                x_center, y_center, width, height = bbox
-                f.write(f"{label_idx} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-
-
-
-# === RENDER LOOP ===
-
-def render_loop():
-    # Initial setups
-    scene = bpy.context.scene
-    camera = bpy.data.objects["Camera"]
-    render = scene.render
-
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-
-    # Renderer setup
-    render.engine = 'BLENDER_EEVEE_NEXT'
-
-    # Set rendering size and scale
-    '''render.resolution_x = 800
-    render.resolution_y = 600
-    render.resolution_percentage = 50'''
-    
-    # Generate images for each category
-    for i in range(len(CATEGORIES)):
-        # Obejct of each category is stored under a collection with the same name
-        collection_name = CATEGORIES[i]
-        collection = bpy.data.collections.get(collection_name)
-
-        if collection is None:
-            print(f"Collection '{collection_name}' not found.")
-            return
-        
-        # Create output folder for a category
-        output_folder = os.path.join(OUTPUT_LOCATION, collection_name)
-        while os.path.exists(output_folder):
-            output_folder = output_folder + "_new"
-        os.makedirs(output_folder)
-
-        # Make subfolders
-        for subfolder in ["images", "labels"]:
-            folder_path = os.path.join(output_folder, subfolder)
-            os.makedirs(folder_path, exist_ok=True)
-
-        # TODO: set up how many times we want to augment the objects for each collection
-        # TODO: add random lighting and shadows (cubes or distractors) to the scene
-
-        # Add augmentation to objects
-        for obj in collection.objects:
-            if obj.type != 'MESH' or obj.hide_render:
-                continue
-
-            #rescale_object(obj, SCALE_TARGET_SIZE, SCALE_EPS)
-            translate_object(obj, TRANSLATE_CENTER, X_RANGE, Y_RANGE, Z_RANGE)
-            rotate_object(obj)
-
-        # Capture views for each object
-        for obj in collection.objects:
-            if obj.type != 'MESH' or obj.hide_render:
-                continue
-            add_hdri_background(scene)
-            capture_views(obj, camera, scene, depsgraph, CATEGORIES, output_folder, ZOOM_DISTANCE)
+        print()
 
 
 
 # === MAIN ===
 
+def main():
+    # Initial setups
+    scene = bpy.context.scene
+    camera = bpy.data.objects["Camera"]
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
+    # Renderer setup
+    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+
+    # Set rendering size and scale
+    scene.render.resolution_percentage = 50
+
+    # Prepare output directories
+    output_folder = os.path.join(OUTPUT_PATH, f"iteration_{7}")
+    if SAVE_FILES:
+        for subfolder in ["images", "labels"]:
+            folder_path = os.path.join(output_folder, subfolder)
+            os.makedirs(folder_path, exist_ok=True)
+
+    # Ranger loop
+    for iter in range(ITERATION):
+        # Pick a background
+        add_hdri_background(scene)
+        
+        # Randomly select objects to render
+        selected_objects = get_selected_objects()
+        bpy.context.view_layer.update()
+
+        # TODO: add geometry and light
+
+        print(f"\n======================================== Starting iteration {iter} ========================================\n")
+
+        # Capture selected objects
+        for obj, _label in selected_objects:
+            capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, iter)
+
+
+
 if __name__ == "__main__":
-    render_loop()
+    main()
