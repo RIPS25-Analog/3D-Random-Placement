@@ -7,8 +7,9 @@ import random
 import numpy as np
 import glob
 
-# Magic debug code line :)))))
+# Magic debug code lines :)))))
 # bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
+# bpy.ops.mesh.primitive_uv_sphere_add(radius=0.2, location=camera.location)
 
 ITERATION = 2
 SAVE_FILES = True # Set false for testing stage
@@ -398,7 +399,7 @@ def main():
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
 
     # Set rendering size and scale
-    scene.render.resolution_percentage = 50
+    scene.render.resolution_percentage = RENDER_PERCENTAGE
 
     # Prepare output directories
     output_folder = os.path.join(OUTPUT_PATH, f"iteration_{7}")
