@@ -6,57 +6,76 @@ import shutil
 import random
 import numpy as np
 import glob
+import re
 
-# Magic debug code lines :)))))
+# Magic debug lines :)))))
 # bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
 # bpy.ops.mesh.primitive_uv_sphere_add(radius=0.2, location=camera.location)
 
-ITERATION = 2
-SAVE_FILES = True # Set false for testing stage
+
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
+HDRI_PATH_COL = glob.glob(r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri\*.exr")
+LABEL_NAMES = ["screwdriver", "wrench"] # TODO: make it automate as well
+
+SAVE_FILES = True # Set false if we don't want to render the final images
+USE_INDEX = False # Set to true if use index instead of name for labels
+USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
+
+'''
+Total picture = ITERATION * NUM_PICS * NUM_OBJ
+'''
+ITERATION = 5 # Number of scene/background, each with unique object arrangement
+NUM_OBJ = 6 # Number of objects selected to be visible on the scene
+NUM_PICS = 1 # Number of pictures taken around per object
+
+NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
+LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
+
 RENDER_PERCENTAGE = 50 # Original size is 1920 x 1080
+
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 0.4 # Range for X-axis
 Y_RANGE = 0.4 # Range for Y-axis
 Z_RANGE = 0.2 # Range for Z-axis
 
-NUM_OBJ = 6
-NUM_DISTRACTOR = 3
-NUM_GEO = 10 
-
 TARGET_SIZE = 0.2 # Target size for objects after scaling
 EPS = 0.05 # Size deviation for randomness
 
 ZOOM_DISTANCE = 1 # Distance to zoom the camera backward from an object
-
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
-HDRI_PATH_COL = glob.glob(r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri\*.exr")
-CATEGORIES = ["screwdriver", "wrench"]
-
-
 
 # === DEFINE CAMERA BEHAVIOR ===
 
 def get_viewpoints(center, radius):
     viewpoints = []
 
-    for x in [-1, 0, 1]:
-        #for y in [-1, 0, 1]:
-            #for z in [-1, 0, 1]:
-                y = 1
-                z = 1
-                if x == 0 and y == 0 and z == 0:
-                    continue  # skip center
-                pos = center + mathutils.Vector((x, y, z)).normalized() * radius
-                viewpoints.append(pos)
+    for i in range(NUM_PICS):
+        z = 2 * random.random() - 1  # z ∈ [-1, 1]
+        theta = 2 * np.pi * random.random()
+        r_xy = np.sqrt(1 - z * z)
+
+        x = r_xy * np.cos(theta)
+        y = r_xy * np.sin(theta)
+
+        # Apply radius and center offset
+        pos = (
+            center[0] + radius * x,
+            center[1] + radius * y,
+            center[2] + radius * z
+        )
+        viewpoints.append(pos)
     
     return viewpoints
 
+def look_at(obj, target):
+    direction = (target - obj.location).normalized()
+    quat = direction.to_track_quat('-Z', 'Y') 
+    obj.rotation_euler = quat.to_euler()
+
+
 def zoom_on_object(camera, center, bbox_corners, depsgraph):
     # Point camera at the object
-    direction = center - camera.location
-    rot_quat = direction.to_track_quat('-Z', 'Y')
-    camera.rotation_euler = rot_quat.to_euler()
+    look_at(camera, center)
 
     # Get object 3D bounding box
     coords = [coord for corner in bbox_corners for coord in corner]
@@ -176,7 +195,7 @@ def is_overlapping_2D(box1, box2):
 
 # === OBJECTS AUGMENTATION ===
 
-def rescale_object(obj, apply=True): 
+def rescale_object(obj, target_size=TARGET_SIZE, eps=EPS, apply=True): 
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
     
@@ -188,7 +207,7 @@ def rescale_object(obj, apply=True):
     # Find largest dimension (width, height, depth)
     current_size = max(dimensions)
 
-    final_size = TARGET_SIZE + random.uniform(-EPS, EPS)
+    final_size = target_size + random.uniform(-eps, eps)
 
     # Compute scale factor
     scale_factor = final_size / current_size
@@ -201,10 +220,10 @@ def rescale_object(obj, apply=True):
         bpy.context.view_layer.update()  # update for bbox recalculation
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
-def translate_object(obj):
-    x = random.uniform(CENTER.x - X_RANGE, CENTER.x + X_RANGE)
-    y = random.uniform(CENTER.y - Y_RANGE, CENTER.y + Y_RANGE)
-    z = random.uniform(CENTER.z - Z_RANGE, CENTER.z + Z_RANGE)
+def translate_object(obj, center=CENTER, x_range=X_RANGE, y_range=Y_RANGE, z_range=Z_RANGE):
+    x = random.uniform(center.x - x_range, center.x + x_range)
+    y = random.uniform(center.y - y_range, center.y + y_range)
+    z = random.uniform(center.z - z_range, center.z + z_range)
     obj.location = (x, y, z)
 
 def rotate_object(obj):
@@ -230,12 +249,12 @@ def add_hdri_background(scene):
 
     hdri_path = random.choice(HDRI_PATH_COL)
 
-    print(f"Chosen backgroundd: {hdri_path}")
+    print(f"Chosen background: {hdri_path}")
 
-    # === CLEAR EXISTING NODES ===
+    # Clear existing nodes
     nodes.clear()
 
-    # === CREATE NODES ===
+    # Create nodes
     env_tex = nodes.new(type="ShaderNodeTexEnvironment")
     env_tex.image = bpy.data.images.load(hdri_path)
     env_tex.location = (-800, 0)
@@ -246,15 +265,15 @@ def add_hdri_background(scene):
     world_output = nodes.new(type="ShaderNodeOutputWorld")
     world_output.location = (0, 0)
 
-    # === LINK NODES ===
+    # Link nodes
     links.new(env_tex.outputs["Color"], background.inputs["Color"])
     links.new(background.outputs["Background"], world_output.inputs["Surface"])
 
-    # === OPTIONAL: ROTATE HDRI ===
     # Add Texture Coordinate and Mapping nodes
     tex_coord = nodes.new(type="ShaderNodeTexCoord")
     tex_coord.location = (-1200, 0)
 
+    # Rotate HDRI
     mapping = nodes.new(type="ShaderNodeMapping")
     mapping.location = (-1000, 0)
     mapping.inputs['Rotation'].default_value[2] = 1.57  # Rotate around Z (in radians)
@@ -269,17 +288,17 @@ def add_hdri_background(scene):
 
 # === ARRANGE AND RENDER OBJECTS ===
 
-def get_selected_objects():
+def get_selected_objects(original_transforms):
     all_objects = [] # (obj, label)
     all_distractors = [] # (obj, label)
 
     # Select all objects from the scene
-    for col_name in CATEGORIES:
-        cur_col = bpy.data.collections[col_name]
-        for obj in cur_col.objects:
+    for label in LABEL_NAMES:
+        collection = bpy.data.collections[label]
+        for obj in collection.objects:
             if obj.type == 'MESH':
-                #obj.hide_render = True
-                all_objects.append((obj, col_name))
+                obj.hide_render = True
+                all_objects.append((obj, label))
 
     # Select all distractors from the scene
     distractors = bpy.data.collections["distractors"]
@@ -295,21 +314,25 @@ def get_selected_objects():
     for obj, _label in selected_objects + selected_distractors:
         obj.hide_render = False
 
+        # Store initial states of the object
+        original_transforms[obj.name] = {
+            'location': obj.location.copy(),
+            'rotation': obj.rotation_euler.copy(),
+            'scale': obj.scale.copy()
+        }
+
         # Add augmentation to both target objects and distractors
-        #rescale_object(obj)
+        rescale_object(obj)
         translate_object(obj)
         rotate_object(obj)
 
-    return selected_objects
+    return selected_objects, selected_distractors
 
 def get_visible_bbox(scene, camera, depsgraph, selected_objects):
     visible_bboxes = dict()
 
     for obj, label in selected_objects:
-        print("Checking visibility of " + obj.name + ": ", end="")
-
-        # Get label_idx
-        label_idx = CATEGORIES.index(label)
+        #print("Checking visibility of " + obj.name + ": ", end="")
 
         # Get bounding box in camera's view
         minX, minY, maxX, maxY, depth = get_2d_bounding_box(obj, camera, scene, depsgraph)
@@ -326,7 +349,7 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects):
             is_visible = is_overlapping_2D(bbox, cam_box)
 
         if is_visible:
-            print("visible")
+            #print("visible")
 
             # Convert to YOLO format
             x_center = (minX + maxX) / 2
@@ -336,14 +359,115 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects):
 
             # Store label {bbox : label}
             visible_bboxes.update({
-                (x_center, y_center, width, height) : label_idx
+                (x_center, y_center, width, height) : label
             })
         else:
-            print("not visible")
+            #print("not visible")
+            pass
 
     return visible_bboxes
 
-def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, iter):
+
+
+# === OCCLUSION DETECTION WITH RAY CAST ===
+
+def bilerp(p00, p10, p11, p01, u, v):
+    """
+    Bilinear interpolation of a quad.
+    Points:
+        p00 = bottom_left
+        p10 = bottom_right
+        p11 = top_right
+        p01 = top_left
+    u: horizontal fraction (0 = left, 1 = right)
+    v: vertical fraction (0 = bottom, 1 = top)
+    """
+    return (
+        (1 - u) * (1 - v) * p00 +
+        u       * (1 - v) * p10 +
+        u       * v       * p11 +
+        (1 - u) * v       * p01
+    )
+
+def get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_label):
+    # Get camera's position and focal length
+    mat_world = camera.matrix_world
+    focal_length = 1 if camera.type == 'ORTHO' else camera.data.display_size
+
+    # Get the corners of camera's visible area
+    cam_corners = [mat_world @ (focal_length * point) for point in camera.data.view_frame(scene=scene)]
+    p11, p10, p00, p01 = cam_corners
+
+    img_width = scene.render.resolution_x 
+    img_height = scene.render.resolution_y
+
+    # Initialize an empty image mask with all zeros
+    image_mask = np.zeros((img_width+1, img_height+1), dtype=np.uint8) 
+
+    visible_obj_index = set()
+    visible_bboxes = dict()
+
+    #  the image mask
+    for i in range(img_width+1):
+        for j in range(img_height+1):
+            u = i / img_width
+            v = j / img_height
+            pos = bilerp(p00, p10, p11, p01, u, v)
+
+            # Use ray cast to determine if any object is visible in a particulat direction
+            direction = (pos - camera.location).normalized()
+            hit_bool, _location, _normal, _index, hit_obj, _matrix = scene.ray_cast(depsgraph, camera.location, direction)
+
+            # We're only interested in objects with predefined indices
+            if hit_bool and hit_obj.pass_index != 0:
+                # Change the index in the image mask if the ray cast hits something
+                image_mask[i, j] = hit_obj.pass_index
+
+                # Store the object as a visible object
+                visible_obj_index.add(hit_obj.pass_index)    
+
+    # For each visible object, find bounding box scaled to [0, 1]
+    for obj_index in visible_obj_index:
+        if obj_index == 0:
+            continue
+
+        minX = minY = 1
+        maxX = maxY = 0
+
+        for i in range(img_width):
+            for j in range(img_height):
+                index = image_mask[i, j]
+                if index == obj_index:
+                    pos = mathutils.Vector((
+                        i / img_width, 
+                        j / img_height
+                    ))
+                    if (pos.x < minX):
+                        minX = pos.x
+                    if (pos.y < minY):
+                        minY = pos.y
+                    if (pos.x > maxX):
+                        maxX = pos.x
+                    if (pos.y > maxY):
+                        maxY = pos.y
+
+        label = pass_index_to_label[obj_index]
+
+        # Convert to YOLO format
+        x_center = (minX + maxX) / 2
+        y_center = 1 - (minY + maxY) / 2 # flip y-axis
+        width = maxX - minX
+        height = maxY - minY
+
+        visible_bboxes.update({
+            (x_center, y_center, width, height) : label
+        })
+
+
+
+# === CAPTURE VIEWS ===
+
+def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, pass_index_to_label, iter):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -362,10 +486,13 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
         camera.location = pos
         zoom_on_object(camera, center, bbox_corners, depsgraph)
 
-        print(f"-------------------- View angle {i} --------------------")
+        print(f"-------------------- View angle {i+1} --------------------")
         
         # Get bounding boxes for visible objects
-        visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects)
+        if USE_RAY_CAST:
+            visible_bboxes = get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_label)
+        else:
+            visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects)
 
         if SAVE_FILES:
             # Save the image
@@ -379,51 +506,115 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
             label_path = rf"{output_folder}\labels\{iter}_{obj.name}_{i+1}.txt"
             
             with open(label_path, "w") as f:
-                for bbox, label_idx in visible_bboxes.items():
+                for bbox, label in visible_bboxes.items():
                     x_center, y_center, width, height = bbox
-                    f.write(f"{label_idx} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+                    if USE_INDEX:
+                        # Get label_idx
+                        label = LABEL_NAMES.index(label)
+                    f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
         print()
+
+
+
+# === SETUPS ===
+
+def setup_pass_index_to_label():
+    pass_index_to_label = dict()
+    pass_index = 1
+
+    for label in LABEL_NAMES:
+        # Get the collection of objects belonging to the same label class
+        collection = bpy.data.collections[label]
+
+        # Assign each object a unique index
+        for obj in collection.objects:
+            obj.pass_index = pass_index
+            pass_index_to_label.update({pass_index : label})
+            pass_index += 1
+
+    return pass_index_to_label
+
+def setup_output_folder():
+    # Regex to match folders like: attempt_7_with_100_iterations
+    pattern = re.compile(r"attempt_(\d+)")
+
+    # Find the highest existing attempt number
+    max_attempt = 0
+    for name in os.listdir(OUTPUT_PATH):
+        match = pattern.fullmatch(name)
+        if match:
+            attempt_num = int(match.group(1))
+            if attempt_num > max_attempt:
+                max_attempt = attempt_num
+
+    next_attempt = max_attempt + 1
+
+    # Prepare output directories
+    output_folder = os.path.join(OUTPUT_PATH, f"attempt_{next_attempt}")
+    if SAVE_FILES:
+        for subfolder in ["images", "labels"]:
+            folder_path = os.path.join(output_folder, subfolder)
+            os.makedirs(folder_path, exist_ok=True)
+
+    return output_folder
 
 
 
 # === MAIN ===
 
 def main():
-    # Initial setups
+    # Common object setups
     scene = bpy.context.scene
     camera = bpy.data.objects["Camera"]
+    light = bpy.data.objects["Light"]
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     # Renderer setup
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
-
-    # Set rendering size and scale
     scene.render.resolution_percentage = RENDER_PERCENTAGE
 
-    # Prepare output directories
-    output_folder = os.path.join(OUTPUT_PATH, f"iteration_{7}")
-    if SAVE_FILES:
-        for subfolder in ["images", "labels"]:
-            folder_path = os.path.join(output_folder, subfolder)
-            os.makedirs(folder_path, exist_ok=True)
+    pass_index_to_label = {}
+    if USE_RAY_CAST:
+        pass_index_to_label = setup_pass_index_to_label()
 
-    # Ranger loop
+    output_folder = setup_output_folder()
+    
+    original_transforms = {} # Stores initial object transforms
+
     for iter in range(ITERATION):
+        print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
+
         # Pick a background
         add_hdri_background(scene)
         
         # Randomly select objects to render
-        selected_objects = get_selected_objects()
+        selected_objects, selected_distractors = get_selected_objects(original_transforms)
+
+        # Add random lighting
+        translate_object(light, x_range=LIGHT_DISTANCE, y_range=LIGHT_DISTANCE, z_range=LIGHT_DISTANCE)
+        look_at(light, CENTER)
+
         bpy.context.view_layer.update()
-
-        # TODO: add geometry and light
-
-        print(f"\n======================================== Starting iteration {iter} ========================================\n")
 
         # Capture selected objects
         for obj, _label in selected_objects:
-            capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, iter)
+            capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, pass_index_to_label, iter)
+
+        # Restore previous locations
+        for obj, _label in selected_objects + selected_distractors:
+            t = original_transforms[obj.name]
+            obj.location = t['location']
+            obj.rotation_euler = t['rotation']
+            obj.scale = t['scale']
+
+        # Clean up
+        original_transforms.clear()
+        bpy.context.view_layer.update()
+
+    # Reset pass index
+    for obj in bpy.data.objects:
+        obj.pass_index = 0
 
 
 
