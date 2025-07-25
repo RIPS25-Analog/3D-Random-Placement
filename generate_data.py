@@ -7,32 +7,40 @@ import random
 import numpy as np
 import glob
 import re
+import argparse
 
-# Magic debug lines :)))))
+# Magic debug lines
 # bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
 # bpy.ops.mesh.primitive_uv_sphere_add(radius=0.2, location=camera.location)
 
+# === ADJUSTABLE ARGUMENTS ===
 
 OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
-HDRI_PATH_COL = glob.glob(r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri\*.exr")
-LABEL_NAMES = ["screwdriver", "wrench"] # TODO: make it automate as well
-
-SAVE_FILES = True # Set false if we don't want to render the final images
-USE_INDEX = False # Set to true if use index instead of name for labels
-USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 
 '''
 Total picture = ITERATION * NUM_PICS * NUM_OBJ
 '''
-ITERATION = 5 # Number of scene/background, each with unique object arrangement
-NUM_OBJ = 6 # Number of objects selected to be visible on the scene
+ITERATION = 1 # Number of scene/background, each with unique object arrangement
+NUM_OBJ = 1 # Number of objects selected to be visible on the scene
 NUM_PICS = 1 # Number of pictures taken around per object
 
 NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
+
+LIGHT_ON = False # Set to true if we want additional lighting
+LIGHT_ENERGY = 50 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
 
 RENDER_PERCENTAGE = 50 # Original size is 1920 x 1080
 
+SAVE_FILES = True # Set to true if we want to render the final images
+USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
+
+
+
+# === INTERNAL VARIABLES ===
+
+LABEL_NAMES = ["screwdriver", "wrench"] # TODO: make it automate as well
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 0.4 # Range for X-axis
@@ -43,6 +51,8 @@ TARGET_SIZE = 0.2 # Target size for objects after scaling
 EPS = 0.05 # Size deviation for randomness
 
 ZOOM_DISTANCE = 1 # Distance to zoom the camera backward from an object
+
+
 
 # === DEFINE CAMERA BEHAVIOR ===
 
@@ -241,22 +251,25 @@ def rotate_object(obj):
 
 # === ADD BACKGROUND ===
 
-def add_hdri_background(scene):
+def add_hdri_background(scene, hdri_path):
     world = scene.world
     world.use_nodes = True
     nodes = world.node_tree.nodes
     links = world.node_tree.links
 
-    hdri_path = random.choice(HDRI_PATH_COL)
+    hdri_files = glob.glob(hdri_path + r"\*.exr")
+    print(hdri_path)
 
-    print(f"Chosen background: {hdri_path}")
+    selected_hdri = random.choice(hdri_files)
+
+    print(f"Chosen background: {selected_hdri}")
 
     # Clear existing nodes
     nodes.clear()
 
     # Create nodes
     env_tex = nodes.new(type="ShaderNodeTexEnvironment")
-    env_tex.image = bpy.data.images.load(hdri_path)
+    env_tex.image = bpy.data.images.load(selected_hdri)
     env_tex.location = (-800, 0)
 
     background = nodes.new(type="ShaderNodeBackground")
@@ -288,12 +301,12 @@ def add_hdri_background(scene):
 
 # === ARRANGE AND RENDER OBJECTS ===
 
-def get_selected_objects(original_transforms):
+def get_selected_objects(original_transforms, label_names, num_obj, num_distractor):
     all_objects = [] # (obj, label)
     all_distractors = [] # (obj, label)
 
     # Select all objects from the scene
-    for label in LABEL_NAMES:
+    for label in label_names:
         collection = bpy.data.collections[label]
         for obj in collection.objects:
             if obj.type == 'MESH':
@@ -308,8 +321,8 @@ def get_selected_objects(original_transforms):
             all_distractors.append((distractor, "distractors"))
 
     # Randomly select some of the objects
-    selected_objects = random.sample(all_objects, min(NUM_OBJ, len(all_objects)))
-    selected_distractors = random.sample(all_distractors, min(NUM_DISTRACTOR, len(all_distractors)))
+    selected_objects = random.sample(all_objects, min(num_obj, len(all_objects)))
+    selected_distractors = random.sample(all_distractors, min(num_distractor, len(all_distractors)))
 
     for obj, _label in selected_objects + selected_distractors:
         obj.hide_render = False
@@ -332,8 +345,6 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects):
     visible_bboxes = dict()
 
     for obj, label in selected_objects:
-        #print("Checking visibility of " + obj.name + ": ", end="")
-
         # Get bounding box in camera's view
         minX, minY, maxX, maxY, depth = get_2d_bounding_box(obj, camera, scene, depsgraph)
         
@@ -349,8 +360,6 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects):
             is_visible = is_overlapping_2D(bbox, cam_box)
 
         if is_visible:
-            #print("visible")
-
             # Convert to YOLO format
             x_center = (minX + maxX) / 2
             y_center = 1 - (minY + maxY) / 2 # flip y-axis
@@ -361,9 +370,6 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects):
             visible_bboxes.update({
                 (x_center, y_center, width, height) : label
             })
-        else:
-            #print("not visible")
-            pass
 
     return visible_bboxes
 
@@ -467,7 +473,7 @@ def get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_labe
 
 # === CAPTURE VIEWS ===
 
-def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, pass_index_to_label, iter):
+def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, pass_index_to_label, iter, save_files, use_ray_cast):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -489,28 +495,27 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
         print(f"-------------------- View angle {i+1} --------------------")
         
         # Get bounding boxes for visible objects
-        if USE_RAY_CAST:
+        if use_ray_cast:
             visible_bboxes = get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_label)
         else:
             visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects)
 
-        if SAVE_FILES:
+        if save_files:
             # Save the image
-            img_path = rf"{output_folder}\images\{iter}_{obj.name}_{i+1}.jpg"
+            img_path = rf"{output_folder}\images\{iter+1}_{obj.name}_{i+1}.jpg"
             scene.render.image_settings.file_format = 'JPEG'
             scene.render.image_settings.color_mode = 'RGB'
             scene.render.filepath = img_path
             bpy.ops.render.render(write_still=True)
             
             # Save the annotation file
-            label_path = rf"{output_folder}\labels\{iter}_{obj.name}_{i+1}.txt"
+            label_path = rf"{output_folder}\labels"
+            label_file_path = rf"{label_path}\{iter+1}_{obj.name}_{i+1}.txt"
+            os.makedirs(label_path, exist_ok=True)
             
-            with open(label_path, "w") as f:
+            with open(label_file_path, "w") as f:
                 for bbox, label in visible_bboxes.items():
                     x_center, y_center, width, height = bbox
-                    if USE_INDEX:
-                        # Get label_idx
-                        label = LABEL_NAMES.index(label)
                     f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
         print()
@@ -519,11 +524,11 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
 
 # === SETUPS ===
 
-def setup_pass_index_to_label():
+def setup_pass_index_to_label(lable_names):
     pass_index_to_label = dict()
     pass_index = 1
 
-    for label in LABEL_NAMES:
+    for label in lable_names:
         # Get the collection of objects belonging to the same label class
         collection = bpy.data.collections[label]
 
@@ -535,13 +540,13 @@ def setup_pass_index_to_label():
 
     return pass_index_to_label
 
-def setup_output_folder():
+def setup_output_folder(output_path):
     # Regex to match folders like: attempt_7_with_100_iterations
     pattern = re.compile(r"attempt_(\d+)")
 
     # Find the highest existing attempt number
     max_attempt = 0
-    for name in os.listdir(OUTPUT_PATH):
+    for name in os.listdir(output_path):
         match = pattern.fullmatch(name)
         if match:
             attempt_num = int(match.group(1))
@@ -551,11 +556,7 @@ def setup_output_folder():
     next_attempt = max_attempt + 1
 
     # Prepare output directories
-    output_folder = os.path.join(OUTPUT_PATH, f"attempt_{next_attempt}")
-    if SAVE_FILES:
-        for subfolder in ["images", "labels"]:
-            folder_path = os.path.join(output_folder, subfolder)
-            os.makedirs(folder_path, exist_ok=True)
+    output_folder = os.path.join(output_path, f"attempt_{next_attempt}")
 
     return output_folder
 
@@ -563,7 +564,7 @@ def setup_output_folder():
 
 # === MAIN ===
 
-def main():
+def main(args):
     # Common object setups
     scene = bpy.context.scene
     camera = bpy.data.objects["Camera"]
@@ -572,34 +573,59 @@ def main():
 
     # Renderer setup
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    scene.render.resolution_percentage = RENDER_PERCENTAGE
+    scene.render.resolution_percentage = args.render_percentage
+    
+    label_names = LABEL_NAMES
 
+    # Give each object a unique pass index and record their coresponding labels
     pass_index_to_label = {}
-    if USE_RAY_CAST:
-        pass_index_to_label = setup_pass_index_to_label()
+    if args.use_ray_cast:
+        pass_index_to_label = setup_pass_index_to_label(label_names)
 
-    output_folder = setup_output_folder()
+    # Switch light on or off
+    if args.light_on:
+        light.data.energy = args.light_energy
+    else:
+        light.data.energy = 0
+
+    output_folder = setup_output_folder(args.output_path)
+
+    print(args.hdri_path)
     
     original_transforms = {} # Stores initial object transforms
 
-    for iter in range(ITERATION):
+    for iter in range(args.iteration):
         print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
 
         # Pick a background
-        add_hdri_background(scene)
+        add_hdri_background(scene, args.hdri_path)
+
+        # Make a subfolder for each iteration
+        if args.iteration > 1:
+            output_subfolder = os.path.join(output_folder, f"iter_{iter+1}")
+        else:
+            output_subfolder = output_folder
         
         # Randomly select objects to render
-        selected_objects, selected_distractors = get_selected_objects(original_transforms)
+        selected_objects, selected_distractors = get_selected_objects(original_transforms, 
+                                                                      label_names, 
+                                                                      args.num_obj, args.num_distractor)
 
         # Add random lighting
-        translate_object(light, x_range=LIGHT_DISTANCE, y_range=LIGHT_DISTANCE, z_range=LIGHT_DISTANCE)
-        look_at(light, CENTER)
+        if args.light_on:
+            translate_object(light, 
+                             x_range = args.light_distance, 
+                             y_range = args.light_distance, 
+                             z_range = args.light_distance)
+            look_at(light, CENTER)     
 
         bpy.context.view_layer.update()
 
         # Capture selected objects
         for obj, _label in selected_objects:
-            capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, pass_index_to_label, iter)
+            capture_views(obj, camera, scene, depsgraph, 
+                          selected_objects, output_subfolder, pass_index_to_label, iter, 
+                          args.save_files, args.use_ray_cast)
 
         # Restore previous locations
         for obj, _label in selected_objects + selected_distractors:
@@ -616,7 +642,80 @@ def main():
     for obj in bpy.data.objects:
         obj.pass_index = 0
 
+    print("\n======================================== Render loop is finished ========================================\n")
+
+def parse_args():
+    '''Parse input arguments
+    '''
+    parser = argparse.ArgumentParser(description = "Create synthetic data with 3D objects.")
+
+    parser.add_argument("--hdri_path",
+        help = "The directory which contains hdri backgrounds.", 
+        #nargs = "?", 
+        default = HDRI_PATH)
+    
+    parser.add_argument("--output_path",
+        help = "The directory where images and labels will be created and stored.", 
+        #nargs = "?", 
+        default = OUTPUT_PATH)
+    
+    parser.add_argument("--iteration",
+        help = "Number of iteration, each with different background and object arrangement.", 
+        #nargs = "?", 
+        default = ITERATION, 
+        type = int)
+    
+    parser.add_argument("--num_obj", 
+        help = "Number of total objects visible in the 3D scene.", 
+        #nargs = "?", 
+        default = NUM_OBJ, 
+        type = int)
+    
+    parser.add_argument("--num_pics", 
+        help = "Number of objects visible in the 3D scene.", 
+        #nargs = "?", 
+        default = NUM_PICS, 
+        type=int)
+    
+    parser.add_argument("--num_distractor", 
+        help = "Number of distractors visible in the 3D scene.", 
+        #nargs = "?", 
+        default = NUM_DISTRACTOR, 
+        type = int)
+    
+    parser.add_argument("--light_on",
+        help = "Set to True if we want to add an additional light source. Default is False.", 
+        action = "store_false")
+    
+    parser.add_argument("--light_energy", 
+        help = "how strong the light is.", 
+        default = LIGHT_ENERGY, 
+        type = int)
+    
+    parser.add_argument("--light_distance", 
+        help = "How far the light is from the center of the scene.", 
+        default = LIGHT_DISTANCE, 
+        type = int)
+    
+    parser.add_argument("--render_percentage", 
+        help = "Scale down the rendered image to __%. Original size is 1920 x 1080.", 
+        default = RENDER_PERCENTAGE, 
+        type = int)
+    
+    parser.add_argument("--save_files",
+        help = "Set to True if we want to store the images and labels. Default is True.", 
+        action = "store_true")
+    
+    parser.add_argument("--use_ray_cast",
+        help = "Set to True if we want to use ray cast for precise bbox detection (very slow). Default is false.", 
+        action = "store_false")
+    
+    args = parser.parse_args()
+    return args
+
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    print(args.hdri_path)
+    main(args)
