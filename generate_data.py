@@ -1,13 +1,17 @@
 import bpy   
 import mathutils 
 import bpy_extras
-import os
-import shutil
-import random
 import numpy as np
+import random
+
+import os
 import glob
 import re
+import sys
 import argparse
+
+import time
+
 
 # Magic debug lines
 # bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
@@ -17,30 +21,29 @@ import argparse
 
 OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
 HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
 
 '''
 Total picture = ITERATION * NUM_PICS * NUM_OBJ
 '''
-ITERATION = 1 # Number of scene/background, each with unique object arrangement
-NUM_OBJ = 1 # Number of objects selected to be visible on the scene
-NUM_PICS = 1 # Number of pictures taken around per object
+ITERATION = 10 # Number of scene/background, each with unique object arrangement
+NUM_OBJ = 10 # Number of objects selected to be visible on the scene
+NUM_PICS = 10 # Number of pictures taken around per object
 
 NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
 
-LIGHT_ON = False # Set to true if we want additional lighting
 LIGHT_ENERGY = 50 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
 
 RENDER_PERCENTAGE = 50 # Original size is 1920 x 1080
 
+LIGHT_ON = False # Set to true if we want additional lighting
 SAVE_FILES = True # Set to true if we want to render the final images
 USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
 
 
 
 # === INTERNAL VARIABLES ===
-
-LABEL_NAMES = ["screwdriver", "wrench"] # TODO: make it automate as well
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 0.4 # Range for X-axis
@@ -51,6 +54,15 @@ TARGET_SIZE = 0.2 # Target size for objects after scaling
 EPS = 0.05 # Size deviation for randomness
 
 ZOOM_DISTANCE = 1 # Distance to zoom the camera backward from an object
+
+# Supported file extensions and corresponding import functions
+importers = {
+    '.obj': bpy.ops.import_scene.obj,
+    '.fbx': bpy.ops.import_scene.fbx,
+    '.glb': bpy.ops.import_scene.gltf,
+    '.gltf': bpy.ops.import_scene.gltf,
+    '.blend': None  # Needs special handling
+}
 
 
 
@@ -117,7 +129,6 @@ def is_obscured(scene, depsgraph, origin, destination):
     hit_bool, _location, _normal, _index, _hit_obj, _matrix = scene.ray_cast(depsgraph, origin, direction, distance=distance)
 
     return hit_bool
-
 
 def get_2d_bounding_box(obj, camera, scene, depsgraph):
     # Update view layer to get the most recent coordinates
@@ -257,11 +268,11 @@ def add_hdri_background(scene, hdri_path):
     nodes = world.node_tree.nodes
     links = world.node_tree.links
 
+    # Fetch all HDRI files from the specified path
     hdri_files = glob.glob(hdri_path + r"\*.exr")
-    print(hdri_path)
 
+    # Choose a random HDRI file
     selected_hdri = random.choice(hdri_files)
-
     print(f"Chosen background: {selected_hdri}")
 
     # Clear existing nodes
@@ -296,6 +307,8 @@ def add_hdri_background(scene, hdri_path):
     links.new(mapping.outputs["Vector"], env_tex.inputs["Vector"])
 
     scene.render.film_transparent = False
+
+    return os.path.basename(selected_hdri)  # Return the name of the selected HDRI file
 
 
 
@@ -541,7 +554,7 @@ def setup_pass_index_to_label(lable_names):
     return pass_index_to_label
 
 def setup_output_folder(output_path):
-    # Regex to match folders like: attempt_7_with_100_iterations
+    # Regex to match folders like: attempt_#
     pattern = re.compile(r"attempt_(\d+)")
 
     # Find the highest existing attempt number
@@ -575,7 +588,8 @@ def main(args):
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
     scene.render.resolution_percentage = args.render_percentage
     
-    label_names = LABEL_NAMES
+    args.obj_path
+    label_names = ["screwdriver", "wrench"] # TODO: make it automate as well
 
     # Give each object a unique pass index and record their coresponding labels
     pass_index_to_label = {}
@@ -588,23 +602,20 @@ def main(args):
     else:
         light.data.energy = 0
 
+    # Set the output folder
     output_folder = setup_output_folder(args.output_path)
-
-    print(args.hdri_path)
     
-    original_transforms = {} # Stores initial object transforms
+    # Stores initial object transforms
+    original_transforms = {} 
 
     for iter in range(args.iteration):
         print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
 
         # Pick a background
-        add_hdri_background(scene, args.hdri_path)
+        hdri_name = add_hdri_background(scene, args.hdri_path)
 
         # Make a subfolder for each iteration
-        if args.iteration > 1:
-            output_subfolder = os.path.join(output_folder, f"iter_{iter+1}")
-        else:
-            output_subfolder = output_folder
+        output_subfolder = os.path.join(output_folder, f"{iter+1}_{hdri_name}")
         
         # Randomly select objects to render
         selected_objects, selected_distractors = get_selected_objects(original_transforms, 
@@ -619,6 +630,7 @@ def main(args):
                              z_range = args.light_distance)
             look_at(light, CENTER)     
 
+        # Update the scene
         bpy.context.view_layer.update()
 
         # Capture selected objects
@@ -644,48 +656,46 @@ def main(args):
 
     print("\n======================================== Render loop is finished ========================================\n")
 
-def parse_args():
+
+
+# === ARGUMENT PARSING ===
+
+def parse_args(argv):
     '''Parse input arguments
     '''
     parser = argparse.ArgumentParser(description = "Create synthetic data with 3D objects.")
 
     parser.add_argument("--hdri_path",
-        help = "The directory which contains hdri backgrounds.", 
-        #nargs = "?", 
+        help = "The directory that contains hdri backgrounds.", 
         default = HDRI_PATH)
+
+    parser.add_argument("--obj_path",
+        help = "The directory which contains 3D object files.", 
+        default = OBJ_PATH)
     
     parser.add_argument("--output_path",
         help = "The directory where images and labels will be created and stored.", 
-        #nargs = "?", 
         default = OUTPUT_PATH)
     
     parser.add_argument("--iteration",
         help = "Number of iteration, each with different background and object arrangement.", 
-        #nargs = "?", 
         default = ITERATION, 
         type = int)
     
     parser.add_argument("--num_obj", 
         help = "Number of total objects visible in the 3D scene.", 
-        #nargs = "?", 
         default = NUM_OBJ, 
         type = int)
     
     parser.add_argument("--num_pics", 
         help = "Number of objects visible in the 3D scene.", 
-        #nargs = "?", 
         default = NUM_PICS, 
         type=int)
     
     parser.add_argument("--num_distractor", 
         help = "Number of distractors visible in the 3D scene.", 
-        #nargs = "?", 
         default = NUM_DISTRACTOR, 
         type = int)
-    
-    parser.add_argument("--light_on",
-        help = "Set to True if we want to add an additional light source. Default is False.", 
-        action = "store_false")
     
     parser.add_argument("--light_energy", 
         help = "how strong the light is.", 
@@ -702,20 +712,49 @@ def parse_args():
         default = RENDER_PERCENTAGE, 
         type = int)
     
+    parser.add_argument("--light_on",
+        help = "Set to True if we want to add an additional light source.", 
+        action = "store_true")
+    
     parser.add_argument("--save_files",
-        help = "Set to True if we want to store the images and labels. Default is True.", 
+        help = "Set to True if we want to store the images and labels.", 
         action = "store_true")
     
     parser.add_argument("--use_ray_cast",
-        help = "Set to True if we want to use ray cast for precise bbox detection (very slow). Default is false.", 
-        action = "store_false")
+        help = "Set to True if we want to use ray cast for precise bbox detection (very slow).", 
+        action = "store_true")
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return args
 
+def handle_argv():
+    argv = sys.argv
+    # Only use args after '--' if running from CLI
+    if "--" in argv:
+        argv = argv[argv.index("--") + 1:]
+    else:
+        argv = []  # Running from Blender UI → don't parse anything
+        if LIGHT_ON:
+            argv.append("--light_on")
+        if SAVE_FILES:
+            argv.append("--save_files")
+        if USE_RAY_CAST:
+            argv.append("--use_ray_cast")
 
+    return argv
+
+
+
+# === ENTRY POINT ===
 
 if __name__ == "__main__":
-    args = parse_args()
-    print(args.hdri_path)
+    start_time = time.time()
+
+    # Main function call
+    argv = handle_argv()
+    args = parse_args(argv)
     main(args)
+
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"\nTotal execution time: {execution_time:.2f} seconds")
