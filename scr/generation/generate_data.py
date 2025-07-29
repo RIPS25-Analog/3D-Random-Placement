@@ -56,17 +56,6 @@ Z_RANGE = 0.2 # Range for Z-axis
 TARGET_SIZE = 0.2 # Target size for objects after scaling
 EPS = 0.05 # Size deviation for randomness
 
-ZOOM_DISTANCE = 1 # Distance to zoom the camera backward from an object
-
-# Supported file extensions and corresponding import functions
-importers = {
-    '.obj': bpy.ops.import_scene.obj,
-    '.fbx': bpy.ops.import_scene.fbx,
-    '.glb': bpy.ops.import_scene.gltf,
-    '.gltf': bpy.ops.import_scene.gltf,
-    '.blend': None  # Needs special handling
-}
-
 
 
 # === DEFINE CAMERA BEHAVIOR ===
@@ -421,7 +410,7 @@ def get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_labe
 
 
 
-# === EVERYTHING THAT HAPPENS HAPPENS HERE ===
+# === RENDER AND SAVE FILES ===
 
 def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_percentage, fill_ratio, 
                   output_folder, pass_index_to_label, iter, save_files, use_ray_cast):
@@ -452,19 +441,20 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
             visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
 
         if save_files:
+            file_name = f"{iter+1}_{obj.name}_{i+1}"
             # Save the image
-            img_path = rf"{output_folder}\images\{iter+1}_{obj.name}_{i+1}.jpg"
+            img_path = os.path.join(output_folder, "images", f"{file_name}.jpg")
             scene.render.image_settings.file_format = 'JPEG'
             scene.render.image_settings.color_mode = 'RGB'
             scene.render.filepath = img_path
             bpy.ops.render.render(write_still=True)
             
             # Make sure the labels folder exists
-            label_path = rf"{output_folder}\labels"
+            label_path = os.path.join(output_folder, "labels")
             os.makedirs(label_path, exist_ok=True)
 
             # Save the annotation file
-            label_file_path = rf"{label_path}\{iter+1}_{obj.name}_{i+1}.txt"
+            label_file_path = os.path.join(label_path, f"{file_name}.txt")
             
             with open(label_file_path, "w") as f:
                 for bbox, label in visible_bboxes.items():
@@ -555,7 +545,7 @@ def get_selected_objects(original_transforms, label_names, num_obj, num_distract
 
 
 
-# === MAIN ===
+# === MAIN FUNCTION ===
 
 def main(args):
     # Common object setups

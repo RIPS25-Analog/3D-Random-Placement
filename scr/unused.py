@@ -1,7 +1,4 @@
 import bpy
-import mathutils
-import numpy as np
-import os
 
 MASK_PASS_IDX = 1 # Pass index for objects we want to generate masks on
 DEFAULT_PASS_IDX = 0 # Default pass index for all other objects
