@@ -26,18 +26,21 @@ OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
 '''
 Total picture = ITERATION * NUM_PICS * NUM_OBJ
 '''
-ITERATION = 10 # Number of scene/background, each with unique object arrangement
-NUM_OBJ = 10 # Number of objects selected to be visible on the scene
-NUM_PICS = 10 # Number of pictures taken around per object
+ITERATION = 1 # Number of scene/background, each with unique object arrangement
+NUM_OBJ = 4 # Number of objects selected to be visible on the scene
+NUM_PICS = 3 # Number of pictures taken around per object
 
 NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
 
 LIGHT_ENERGY = 50 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
 
-RENDER_PERCENTAGE = 50 # Original size is 1920 x 1080
+FILL_RATIO = 0.2 # Ratio of the center object size to the camera view size
+VISIBLE_PERCENTAGE = 0.3 # Minimum percentage of visible bounding box to be considered valid
 
-LIGHT_ON = False # Set to true if we want additional lighting
+RENDER_PERCENTAGE = 1 # Original size is 1920 x 1080
+
+LIGHT_ON = True # Set to true if we want additional lighting
 SAVE_FILES = True # Set to true if we want to render the final images
 USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
 
@@ -94,8 +97,7 @@ def look_at(obj, target):
     quat = direction.to_track_quat('-Z', 'Y') 
     obj.rotation_euler = quat.to_euler()
 
-
-def zoom_on_object(camera, center, bbox_corners, depsgraph):
+def zoom_on_object(camera, center, bbox_corners, fill_ratio, depsgraph):
     # Point camera at the object
     look_at(camera, center)
 
@@ -109,108 +111,7 @@ def zoom_on_object(camera, center, bbox_corners, depsgraph):
 
     # Zoom away from the object
     forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
-    camera.location -= forward * ZOOM_DISTANCE
-
-
-
-# === GET BOUNDING BOXES ===
-
-def is_obscured(scene, depsgraph, origin, destination):
-    # get the direction
-    direction = (destination - origin)
-    distance = direction.length
-    direction = direction.normalized()
-
-    # Add small offset distance to avoid colliding with itself
-    offset = 0.01  
-    origin = origin + direction * offset
-
-    # cast a ray from origin to destination
-    hit_bool, _location, _normal, _index, _hit_obj, _matrix = scene.ray_cast(depsgraph, origin, direction, distance=distance)
-
-    return hit_bool
-
-def get_2d_bounding_box(obj, camera, scene, depsgraph):
-    # Update view layer to get the most recent coordinates
-    bpy.context.view_layer.update()
-    
-    # Get the transformation matrix columns
-    matrix = obj.matrix_world
-    col0 = matrix.col[0]
-    col1 = matrix.col[1]
-    col2 = matrix.col[2]
-    col3 = matrix.col[3]
-
-    # Initialize min, max, and depth values for 2D bounding box
-    minX = minY = 1
-    maxX = maxY = 0
-    depth = 0
-
-    # Determine the number of vertices to iterate over
-    mesh = obj.data
-    numVertices = len(mesh.vertices)
-
-    vertices_world_pos = []
-    
-    for t in range(0, numVertices):
-        # Get the vertex position
-        co = mesh.vertices[t].co
-
-        # WorldPos = X - axis⋅x + Y- axis⋅y + Z - axis⋅z + Translation
-        pos_hom = (col0 * co[0]) + (col1 * co[1]) + (col2 * co[2]) + col3
-        pos = mathutils.Vector(pos_hom[:3])
-        
-        # Get the vertices that are visible from the camera
-        if not is_obscured(scene, depsgraph, pos, camera.location):
-            vertices_world_pos.append(pos)
-
-    # Almost totally occluded, return invalid bounding boxes
-    if len(vertices_world_pos) <= 1:
-        return 0, 0, 0, 0, -1
-    
-    # Iterate through each vertex
-    for pos in vertices_world_pos:
-
-        # maps a 3D point in world space into normalized camera view coordinates
-        pos = bpy_extras.object_utils.world_to_camera_view(scene, camera, pos)
-        depth += pos.z
-
-        # Update min and max values as needed
-        if (pos.x < minX):
-            minX = pos.x
-        if (pos.y < minY):
-            minY = pos.y
-        if (pos.x > maxX):
-            maxX = pos.x
-        if (pos.y > maxY):
-            maxY = pos.y
-
-    # Average out depth
-    depth /= numVertices 
-
-    # Clamp to [0, 1]
-    minX = max(0.0, min(minX, 1.0))
-    minY = max(0.0, min(minY, 1.0))
-    maxX = max(0.0, min(maxX, 1.0))
-    maxY = max(0.0, min(maxY, 1.0))
-
-    return minX, minY, maxX, maxY, depth
-
-
-
-# === CHECK BOX OVERLAPPING ===
-
-def is_overlapping_1D(box1, box2):
-    # (min, max)
-    return box1[1] >= box2[0] and box2[1] >= box1[0]
-
-def is_overlapping_2D(box1, box2):
-    # (minX, minY, maxX, maxY)
-    box1_x = (box1[0], box1[2])
-    box1_y = (box1[1], box1[3])
-    box2_x = (box2[0], box2[2])
-    box2_y = (box2[1], box2[3])
-    return is_overlapping_1D(box1_x, box2_x) and is_overlapping_1D(box1_y, box2_y)
+    camera.location += forward - forward / fill_ratio
 
 
 
@@ -312,67 +213,103 @@ def add_hdri_background(scene, hdri_path):
 
 
 
-# === ARRANGE AND RENDER OBJECTS ===
+# === GET BOUNDING BOXES ===
 
-def get_selected_objects(original_transforms, label_names, num_obj, num_distractor):
-    all_objects = [] # (obj, label)
-    all_distractors = [] # (obj, label)
+def is_obscured(scene, depsgraph, origin, destination):
+    # get the direction
+    direction = (destination - origin)
+    distance = direction.length
+    direction = direction.normalized()
 
-    # Select all objects from the scene
-    for label in label_names:
-        collection = bpy.data.collections[label]
-        for obj in collection.objects:
-            if obj.type == 'MESH':
-                obj.hide_render = True
-                all_objects.append((obj, label))
+    # Add small offset distance to avoid colliding with itself
+    offset = 0.01  
+    origin = origin + direction * offset
 
-    # Select all distractors from the scene
-    distractors = bpy.data.collections["distractors"]
-    for distractor in distractors.objects:
-        if distractor.type == 'MESH':
-            distractor.hide_render = True
-            all_distractors.append((distractor, "distractors"))
+    # cast a ray from origin to destination
+    hit_bool, _location, _normal, _index, _hit_obj, _matrix = scene.ray_cast(depsgraph, origin, direction, distance=distance)
 
-    # Randomly select some of the objects
-    selected_objects = random.sample(all_objects, min(num_obj, len(all_objects)))
-    selected_distractors = random.sample(all_distractors, min(num_distractor, len(all_distractors)))
+    return hit_bool
 
-    for obj, _label in selected_objects + selected_distractors:
-        obj.hide_render = False
+def get_2d_bounding_box(obj, camera, scene, depsgraph):
+    # Update view layer to get the most recent coordinates
+    bpy.context.view_layer.update()
+    
+    # Determine the number of vertices to iterate over
+    obj_vertices = obj.data.vertices
+    num_total_vertices = len(obj_vertices)
+    
+    vertices_in_cam = []
+    vertices_visible_in_cam = []
+    
+    for i in range(0, num_total_vertices):
+        # Get the vertex position
+        local_pos = obj_vertices[i].co
+        world_pos = obj.matrix_world @ local_pos
 
-        # Store initial states of the object
-        original_transforms[obj.name] = {
-            'location': obj.location.copy(),
-            'rotation': obj.rotation_euler.copy(),
-            'scale': obj.scale.copy()
-        }
+        # maps a 3D point in world space into normalized camera view coordinates
+        cam_pos = bpy_extras.object_utils.world_to_camera_view(scene, camera, world_pos)
+        
+        is_visible = not is_obscured(scene, depsgraph, world_pos, camera.location)
+        is_in_frustum = (0 <= cam_pos.x <= 1) and (0 <= cam_pos.y <= 1)
+        is_in_front = cam_pos.z > 0
+        
+        # Get the vertices that are in front of the camera
+        if is_in_front:
+            vertices_in_cam.append(cam_pos)
+            
+            # Get the vertices are actually visible
+            if is_visible and is_in_frustum:
+                vertices_visible_in_cam.append(cam_pos)
+            
+    num_visible_vertices = len(vertices_visible_in_cam)
 
-        # Add augmentation to both target objects and distractors
-        rescale_object(obj)
-        translate_object(obj)
-        rotate_object(obj)
+    # If there are not enough visible vertices, return bounding box with no volume
+    if num_visible_vertices * 10 < num_total_vertices:
+        return 0, 0, 0, 0, 0
+    
+    # Initialize min, max for 2D bounding box
+    minX = minY = minX_visible = minY_visible = 1
+    maxX = maxY = maxX_visible = maxY_visible = 0
+    
+    # Iterate through vertices in front of the camera
+    for pos in vertices_in_cam:
+        if (pos.x < minX):
+            minX = pos.x
+        if (pos.y < minY):
+            minY = pos.y
+        if (pos.x > maxX):
+            maxX = pos.x
+        if (pos.y > maxY):
+            maxY = pos.y
+    
+    area = (maxX - minX) * (maxY - minY)
+    
+    # Iterate through actually visible vertices
+    for pos in vertices_visible_in_cam:
+        if (pos.x < minX_visible):
+            minX_visible = pos.x
+        if (pos.y < minY_visible):
+            minY_visible = pos.y
+        if (pos.x > maxX_visible):
+            maxX_visible = pos.x
+        if (pos.y > maxY_visible):
+            maxY_visible = pos.y
+            
+    visible_area = (maxX_visible - minX_visible) * (maxY_visible - minY_visible)
+    
+    # Determine the percentage of visible part v.s. whole part
+    vis_percentage = visible_area / area
 
-    return selected_objects, selected_distractors
+    return minX_visible, minY_visible, maxX_visible, maxY_visible, vis_percentage
 
-def get_visible_bbox(scene, camera, depsgraph, selected_objects):
+def get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage):
     visible_bboxes = dict()
 
     for obj, label in selected_objects:
         # Get bounding box in camera's view
-        minX, minY, maxX, maxY, depth = get_2d_bounding_box(obj, camera, scene, depsgraph)
-        
-        # Initialize visibility to be False
-        is_visible = False
+        minX, minY, maxX, maxY, vis_percentage = get_2d_bounding_box(obj, camera, scene, depsgraph)
 
-        # Check visibility from camera
-        if depth > 0:
-            bbox = (minX, minY, maxX, maxY)
-            offset = 0.05
-            cam_box = (0 + offset, 0 + offset, 1 - offset, 1 - offset)
-
-            is_visible = is_overlapping_2D(bbox, cam_box)
-
-        if is_visible:
+        if vis_percentage > visible_percentage:
             # Convert to YOLO format
             x_center = (minX + maxX) / 2
             y_center = 1 - (minY + maxY) / 2 # flip y-axis
@@ -484,9 +421,10 @@ def get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_labe
 
 
 
-# === CAPTURE VIEWS ===
+# === EVERYTHING THAT HAPPENS HAPPENS HERE ===
 
-def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder, pass_index_to_label, iter, save_files, use_ray_cast):
+def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_percentage, fill_ratio, 
+                  output_folder, pass_index_to_label, iter, save_files, use_ray_cast):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -503,7 +441,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
     for i, pos in enumerate(viewpoints):
         # Move camera to position
         camera.location = pos
-        zoom_on_object(camera, center, bbox_corners, depsgraph)
+        zoom_on_object(camera, center, bbox_corners, fill_ratio, depsgraph)
 
         print(f"-------------------- View angle {i+1} --------------------")
         
@@ -511,7 +449,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
         if use_ray_cast:
             visible_bboxes = get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_label)
         else:
-            visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects)
+            visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
 
         if save_files:
             # Save the image
@@ -521,10 +459,12 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
             scene.render.filepath = img_path
             bpy.ops.render.render(write_still=True)
             
-            # Save the annotation file
+            # Make sure the labels folder exists
             label_path = rf"{output_folder}\labels"
-            label_file_path = rf"{label_path}\{iter+1}_{obj.name}_{i+1}.txt"
             os.makedirs(label_path, exist_ok=True)
+
+            # Save the annotation file
+            label_file_path = rf"{label_path}\{iter+1}_{obj.name}_{i+1}.txt"
             
             with open(label_file_path, "w") as f:
                 for bbox, label in visible_bboxes.items():
@@ -535,7 +475,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, output_folder
 
 
 
-# === SETUPS ===
+# === PRE-RENDER SETUP ===
 
 def setup_pass_index_to_label(lable_names):
     pass_index_to_label = dict()
@@ -573,6 +513,46 @@ def setup_output_folder(output_path):
 
     return output_folder
 
+def get_selected_objects(original_transforms, label_names, num_obj, num_distractor):
+    all_objects = [] # (obj, label)
+    all_distractors = [] # (obj, label)
+
+    # Select all objects from the scene
+    for label in label_names:
+        collection = bpy.data.collections[label]
+        for obj in collection.objects:
+            if obj.type == 'MESH':
+                obj.hide_render = True
+                all_objects.append((obj, label))
+
+    # Select all distractors from the scene
+    distractors = bpy.data.collections["distractors"]
+    for distractor in distractors.objects:
+        if distractor.type == 'MESH':
+            distractor.hide_render = True
+            all_distractors.append((distractor, "distractors"))
+
+    # Randomly select some of the objects
+    selected_objects = random.sample(all_objects, min(num_obj, len(all_objects)))
+    selected_distractors = random.sample(all_distractors, min(num_distractor, len(all_distractors)))
+
+    for obj, _label in selected_objects + selected_distractors:
+        obj.hide_render = False
+
+        # Store initial states of the object
+        original_transforms[obj.name] = {
+            'location': obj.location.copy(),
+            'rotation': obj.rotation_euler.copy(),
+            'scale': obj.scale.copy()
+        }
+
+        # Add augmentation to both target objects and distractors
+        rescale_object(obj)
+        translate_object(obj)
+        rotate_object(obj)
+
+    return selected_objects, selected_distractors
+
 
 
 # === MAIN ===
@@ -580,13 +560,13 @@ def setup_output_folder(output_path):
 def main(args):
     # Common object setups
     scene = bpy.context.scene
-    camera = bpy.data.objects["Camera"]
-    light = bpy.data.objects["Light"]
+    camera = scene.camera
+    light = scene.objects["Light"]
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     # Renderer setup
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    scene.render.resolution_percentage = args.render_percentage
+    scene.render.resolution_percentage = args.render_percentage * 100
     
     args.obj_path
     label_names = ["screwdriver", "wrench"] # TODO: make it automate as well
@@ -635,9 +615,8 @@ def main(args):
 
         # Capture selected objects
         for obj, _label in selected_objects:
-            capture_views(obj, camera, scene, depsgraph, 
-                          selected_objects, output_subfolder, pass_index_to_label, iter, 
-                          args.save_files, args.use_ray_cast)
+            capture_views(obj, camera, scene, depsgraph, selected_objects, args.visible_percentage, args.fill_ratio, 
+                          output_subfolder, pass_index_to_label, iter, args.save_files, args.use_ray_cast)
 
         # Restore previous locations
         for obj, _label in selected_objects + selected_distractors:
@@ -651,7 +630,7 @@ def main(args):
         bpy.context.view_layer.update()
 
     # Reset pass index
-    for obj in bpy.data.objects:
+    for obj in scene.objects:
         obj.pass_index = 0
 
     print("\n======================================== Render loop is finished ========================================\n")
@@ -707,10 +686,20 @@ def parse_args(argv):
         default = LIGHT_DISTANCE, 
         type = int)
     
+    parser.add_argument("--fill_ratio", 
+        help = "Ratio of the center object size to the camera view size.", 
+        default = FILL_RATIO, 
+        type = float)
+    
+    parser.add_argument("--visible_percentage",
+        help = "Minimum percentage of visible bounding box to be considered valid.", 
+        default = VISIBLE_PERCENTAGE, 
+        type = float)
+    
     parser.add_argument("--render_percentage", 
         help = "Scale down the rendered image to __%. Original size is 1920 x 1080.", 
         default = RENDER_PERCENTAGE, 
-        type = int)
+        type = float)
     
     parser.add_argument("--light_on",
         help = "Set to True if we want to add an additional light source.", 
@@ -733,7 +722,7 @@ def handle_argv():
     if "--" in argv:
         argv = argv[argv.index("--") + 1:]
     else:
-        argv = []  # Running from Blender UI → don't parse anything
+        argv = []  # Running from Blender UI -> don't parse anything
         if LIGHT_ON:
             argv.append("--light_on")
         if SAVE_FILES:
