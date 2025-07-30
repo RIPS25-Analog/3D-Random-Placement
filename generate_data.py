@@ -24,7 +24,7 @@ HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
 
 '''
-Total picture = ITERATION * NUM_PICS * NUM_OBJ
+total pictures generated = iteration * num_obj * num_pics
 '''
 ITERATION = 1 # Number of scene/background, each with unique object arrangement
 NUM_OBJ = 4 # Number of objects selected to be visible on the scene
@@ -163,7 +163,7 @@ def add_hdri_background(scene, hdri_path):
 
     # Choose a random HDRI file
     selected_hdri = random.choice(hdri_files)
-    print(f"Chosen background: {selected_hdri}")
+    #print(f"Chosen background: {selected_hdri}")
 
     # Clear existing nodes
     nodes.clear()
@@ -424,7 +424,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
     # Get a list of camera positions
     viewpoints = get_viewpoints(center, max_dist)
 
-    print(f"\n-------------------- Taking photos around {obj.name} --------------------\n")
+    #print(f"\n-------------------- Taking photos around {obj.name} --------------------\n")
     
     # Iterate through all viewpoints around one object
     for i, pos in enumerate(viewpoints):
@@ -432,7 +432,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
         camera.location = pos
         zoom_on_object(camera, center, bbox_corners, fill_ratio, depsgraph)
 
-        print(f"-------------------- View angle {i+1} --------------------")
+        #print(f"-------------------- View angle {i+1} --------------------")
         
         # Get bounding boxes for visible objects
         if use_ray_cast:
@@ -461,7 +461,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
                     x_center, y_center, width, height = bbox
                     f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
-        print()
+        #print()
 
 
 
@@ -483,7 +483,7 @@ def setup_pass_index_to_label(lable_names):
 
     return pass_index_to_label
 
-def setup_output_folder(output_path):
+def setup_output_folder(output_path, light_on):
     # Regex to match folders like: attempt_#
     pattern = re.compile(r"attempt_(\d+)")
 
@@ -500,6 +500,10 @@ def setup_output_folder(output_path):
 
     # Prepare output directories
     output_folder = os.path.join(output_path, f"attempt_{next_attempt}")
+    if light_on:
+        output_folder += "_light_on"
+    else:
+        output_folder += "_light_off"
 
     return output_folder
 
@@ -577,8 +581,8 @@ def add_default_obj(scene):
     camera_object.rotation_euler = (1.1, 0, 0)
 
     # Link camera to scene
-    bpy.context.collection.objects.link(camera_object)
-    bpy.context.scene.camera = camera_object
+    scene.collection.objects.link(camera_object)
+    scene.camera = camera_object
     
     
     # Add new sunlight
@@ -590,10 +594,7 @@ def add_default_obj(scene):
     light_object.rotation_euler = (0.7854, 0, 0.7854)  # 45 degrees down and to side
 
     # Link light to scene
-    bpy.context.collection.objects.link(light_object)
-    
-    #bpy.ops.mesh.primitive_cube_add(size=0.2, location=(0, 0, 0))
-
+    scene.collection.objects.link(light_object)
 
 
 # === IMPORT OBJECTS ===
@@ -644,16 +645,13 @@ def import_obj(scene, obj_path):
 # === MAIN FUNCTION ===
 
 def main(args):
-    print("\n======================================== Main is running ========================================\n")
-    
-    clear_stage(scene)
-    print("Cleared the stage.")
+    print("Main is running")
+    scene = bpy.context.scene
 
+    clear_stage(scene)
     add_default_obj(scene)
-    print("Added default objects (camera, light).")
 
     # Common object setups
-    scene = bpy.context.scene
     camera = scene.camera
     light = scene.objects["Sun"]
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -664,7 +662,6 @@ def main(args):
 
     
     label_names = import_obj(scene, args.obj_path)
-    print(f"Imported objects: {label_names}")
     
     # Give each object a unique pass index and record their coresponding labels
     pass_index_to_label = {}
@@ -678,14 +675,14 @@ def main(args):
         light.data.energy = 0
 
     # Set the output folder
-    output_folder = setup_output_folder(args.output_path)
+    output_folder = setup_output_folder(args.output_path, args.light_on)
     print(f"Set up output folder: {output_folder}")
     
     # Stores initial object transforms
     original_transforms = {} 
 
     for iter in range(args.iteration):
-        print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
+        #print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
 
         # Pick a background
         hdri_name = add_hdri_background(scene, args.hdri_path)
@@ -729,7 +726,7 @@ def main(args):
     for obj in scene.objects:
         obj.pass_index = 0
 
-    print("\n======================================== Render loop is finished ========================================\n")
+    #print("\n======================================== Render loop is finished ========================================\n")
 
 
 
