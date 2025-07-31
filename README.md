@@ -7,14 +7,10 @@ Generate synthetic data for object detection tasks.
 - Blender 4.0 (some functions do not exists in the previous versions)
 - Blender 3.11 (at least that's what I used)
 - HDRI files for background
-    - Default path: "data\background_hdri"
     - Supported format: ['.exr']
 - 3D object in one of the formats:
-    - Default path: "data\objects"
     - Supported format: ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
     - Has additional structure assumptions (see below)
-
-The diagram below explains the folder structure:
 
 ```
 ├── data/                            
@@ -22,7 +18,7 @@ The diagram below explains the folder structure:
 |   ├── objects/
 |   |   ├── <category_1>/
 |   |   |   ├── <obj_1>/
-|   |   |   |   ├── <obj_1>.gltf             # .gltf is just an example, but the name of the object must match the folder name
+|   |   |   |   ├── <obj_1>.gltf             # the name of the object must match the name of the folder
 |   |   |   |   ├── <material>.png
 |   |   |   |   └── <texture>.png
 |   |   |   ├── <obj_2>/
@@ -54,10 +50,12 @@ The diagram below explains the folder structure:
 |   └── ... 
 ```
 
-### How to Run
+### How to Generate Data
 
-- Open ```data_generation_and_processing.ipynb``` and run the first cell. Change parameters accordingly.
-- Open a Blender file, load ```generate_data.py```, change the absolute paths on the top, and run. This script will clea the current active scene, so the best practice is to open a new file or create a new scene before running.
+1. Open ```data_generation_and_processing.ipynb```, change the absolute paths, and run the first cell. Change parameters accordingly.
+2. Open a Blender file, load ```generate_data.py```, change the absolute paths, and run the script. This script will clea the current active scene, so the best practice is to open a new file or create a new scene before running.
+
+Note: Using absolute path is safer if we're not agreeing with where Blender is installed.
 
 ### What Does the Other Scripts Do
 
@@ -66,10 +64,6 @@ The diagram below explains the folder structure:
 - ```export_obj.py```: Once we're done pre-editing the meshes, run this script to save the objects.
     - Supported format: ['.obj', '.gltf', '.glb']
     - Has additional structure assumptions (see below)
-- ```unused.py```: Stores unused functions, including generating object mask and using regular 2D image as background instead of HDRI.
-
-The diagram below explains the Blender scene and collection structure:
-
 ```
 ├── Scene/                            
 |   ├── Scene Collection/
@@ -82,3 +76,4 @@ The diagram below explains the Blender scene and collection structure:
 |   |   ├── ...
 |   |   └── distractors/
 ```
+- ```unused.py```: Stores unused functions, including generating object mask and using regular 2D image as background instead of HDRI.
