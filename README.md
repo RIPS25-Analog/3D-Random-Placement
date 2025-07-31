@@ -77,9 +77,8 @@ Note: Using absolute path is safer if we're not agreeing with where Blender is i
 |   |   ├── ...
 |   |   └── distractors/
 ```
-- ```unused.py```: Stores unused functions, including generating object mask and using regular 2D image as background instead of HDRI.
 
 ## Limitations
 
-- Bounding box is not very accurate if the object is highly occulded.
-- Objects flow in the air (we can eliminate this by using Blender's physical simulation and 3D scenes).
+- Bounding box is not very accurate if the object is highly occluded.
+- Objects flow in the air.
