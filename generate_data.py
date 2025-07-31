@@ -13,15 +13,15 @@ import argparse
 import time
 
 
-# Magic debug lines
+# Useful debug lines
 # bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
 # bpy.ops.mesh.primitive_uv_sphere_add(radius=0.2, location=camera.location)
 
 # === ADJUSTABLE ARGUMENTS ===
 
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
-OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
+OUTPUT_PATH = r"output"
+HDRI_PATH = r"/home/data/3d_render/background_hdri"
+OBJ_PATH = r"/home/data/3d_render/objects"
 
 OBJ_EXT = ".gltf"  # Change to the desired file extension
 
@@ -160,11 +160,11 @@ def add_hdri_background(scene, hdri_path):
     links = world.node_tree.links
 
     # Fetch all HDRI files from the specified path
-    hdri_files = glob.glob(hdri_path + r"\*.exr")
+    hdri_files = glob.glob(hdri_path + r"/*.exr")
 
     # Choose a random HDRI file
     selected_hdri = random.choice(hdri_files)
-    #print(f"Chosen background: {selected_hdri}")
+    print(f"Chosen background: {selected_hdri}")
 
     # Clear existing nodes
     nodes.clear()
@@ -425,7 +425,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
     # Get a list of camera positions
     viewpoints = get_viewpoints(center, max_dist)
 
-    #print(f"\n-------------------- Taking photos around {obj.name} --------------------\n")
+    print(f"\n-------------------- Taking photos around {obj.name} --------------------\n")
     
     # Iterate through all viewpoints around one object
     for i, pos in enumerate(viewpoints):
@@ -433,7 +433,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
         camera.location = pos
         zoom_on_object(camera, center, bbox_corners, fill_ratio, depsgraph)
 
-        #print(f"-------------------- View angle {i+1} --------------------")
+        print(f"-------------------- View angle {i+1} --------------------")
         
         # Get bounding boxes for visible objects
         if use_ray_cast:
@@ -441,7 +441,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
         else:
             visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
 
-        if save_files:
+        if save_files:            
             file_name = f"{iter+1}_{obj.name}_{i+1}"
             # Save the image
             img_path = os.path.join(output_folder, "images", f"{file_name}.jpg")
@@ -462,7 +462,7 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
                     x_center, y_center, width, height = bbox
                     f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
-        #print()
+        print()
 
 
 
@@ -672,7 +672,10 @@ def main(args):
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     # Renderer setup
-    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    try:
+        scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    except Exception:
+        scene.render.engine = 'BLENDER_EEVEE'
     scene.render.resolution_percentage = int(args.render_percentage * 100)
 
     
@@ -696,7 +699,7 @@ def main(args):
     original_transforms = {} 
 
     for iter in range(args.iteration):
-        #print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
+        print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
 
         # Pick a background
         hdri_name = add_hdri_background(scene, args.hdri_path)
@@ -741,7 +744,7 @@ def main(args):
         obj.pass_index = 0
 
     print(f"Output folder: {output_folder}")
-    #print("\n======================================== Render loop is finished ========================================\n")
+    print("\n======================================== Render loop is finished ========================================\n")
 
 
 
@@ -831,11 +834,16 @@ def parse_args(argv):
 
 def handle_argv():
     argv = sys.argv
-    # Only use args after '--' if running from CLI
+
     if "--" in argv:
+        # Running from CLI using Blender with arguments after "--"
         argv = argv[argv.index("--") + 1:]
+    elif os.path.basename(__file__) in argv[0] and len(argv) > 1:
+        # Running from CLI with the scripts alone (using bpy library)
+        argv = argv[1:] # remove the script name from the arguments
+        pass  
     else:
-        argv = []  # Running from Blender UI -> don't parse anything
+        argv = [] # don't parse anything and use default values
         if LIGHT_ON:
             argv.append("--light_on")
         if SAVE_FILES:
@@ -843,6 +851,7 @@ def handle_argv():
         if USE_RAY_CAST:
             argv.append("--use_ray_cast")
 
+    print(f"Arguments: {argv}")
     return argv
 
 

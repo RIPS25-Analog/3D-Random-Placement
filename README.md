@@ -2,10 +2,11 @@
 
 Generate synthetic data using 3D assets for object detection tasks.
 
-## Files and Software Needed
+## Files and packages Needed
 
-- Blender 4.0 (some functions do not exists in the previous versions)
-- Python 3.11 (at least that's what I used)
+- bpy 4.0.0 (some functions do not exists in the previous versions)
+- mathutils
+- Python 3.11
 - HDRI files for background
     - Supported format: ['.exr']
 - 3D object in one of the formats:
@@ -13,22 +14,24 @@ Generate synthetic data using 3D assets for object detection tasks.
     - Has additional folder structure assumptions (see below)
         - If you run the script ```export_obj.py```, it will automatically generate the correct structure.
 
-```
-├── data/                            
-|   ├── background_hdri/                    # stores HDRI files
-|   ├── objects/                            # store 3D object models
-|   |   ├── <category_1>/                   # category = class label for the objects inside this file
-|   |   |   ├── <obj_1>/
-|   |   |   |   ├── <obj_1>.gltf            # the name of the object must match the name of the folder
-|   |   |   |   ├── <material>.png
-|   |   |   |   └── <texture>.png
-|   |   |   ├── <obj_2>/
-|   |   |   |   └── ...
+```                           
+├── background_hdri/                    # stores HDRI files
+├── objects/                            # store 3D object models
+|   ├── <category_1>/                   # category = class label for the objects inside this file
+|   |   ├── <obj_1>/
+|   |   |   ├── <obj_1>.gltf            # the name of the object must match the name of the folder
+|   |   |   ├── <material>.png
+|   |   |   └── <texture>.png
+|   |   ├── <obj_2>/
 |   |   |   └── ...
-|   |   ├── <category_2>/
-|   |   ├── <category_3>/
-|   |   ├── ...
-|   |   └── distractors/                    # distractors will not be parsed as a label
+|   |   └── ...
+|   ├── <category_2>/
+|   ├── ...
+|   └── distractors/                    # distractors will not be parsed as a label
+```
+
+Output structure
+```
 |   output/   
 |   ├── attempt_1_light_on/                 # one attempt = running the script once
 |   |   ├── 1_<background_1>/               # images generated with the same background and scene layout are grouped together
@@ -53,8 +56,9 @@ Generate synthetic data using 3D assets for object detection tasks.
 
 ## How to Generate Data
 
-1. Open ```data_generation_and_processing.ipynb```. Change the absolute paths. Change parameters accordingly. Run the first cell. 
-2. Open a Blender file. Go to Scripting section on the top bar. Click on the folder icon that reads "Open Text" and load ```generate_data.py```. Change the absolute paths and parameters, and run the cript. This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
+- From Jupyter Notebook: Open ```data_generation_and_processing.ipynb```. Change the paths. Change parameters accordingly. Run the first cell. 
+- From Terminal: :)
+- From Blender: Open a Blender file. Go to Scripting section on the top bar. Click on the folder icon that reads "Open Text" and load ```generate_data.py```. Change the absolute paths and parameters, and run the cript. This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
 
 Note: Using absolute path is safer if we're not agreeing with where Blender is installed.
 
