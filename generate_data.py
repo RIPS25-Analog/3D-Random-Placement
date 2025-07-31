@@ -23,6 +23,8 @@ OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data"
 HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
 
+OBJ_EXT = ".gltf"  # Change to the desired file extension
+
 '''
 total pictures generated = iteration * num_obj * num_pics
 '''
@@ -32,13 +34,12 @@ NUM_PICS = 3 # Number of pictures taken around per object
 
 NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
 
-LIGHT_ENERGY = 50 # How strong the light is
+LIGHT_ENERGY = 40 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
 
 FILL_RATIO = 0.2 # Ratio of the center object size to the camera view size
 VISIBLE_PERCENTAGE = 0.3 # Minimum percentage of visible bounding box to be considered valid
-
-RENDER_PERCENTAGE = 1 # Original size is 1920 x 1080
+RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
 
 LIGHT_ON = True # Set to true if we want additional lighting
 SAVE_FILES = True # Set to true if we want to render the final images
@@ -485,7 +486,7 @@ def setup_pass_index_to_label(lable_names):
 
 def setup_output_folder(output_path, light_on):
     # Regex to match folders like: attempt_#
-    pattern = re.compile(r"attempt_(\d+)")
+    pattern = re.compile(r"attempt_(\d+)_light_(on|off)")
 
     # Find the highest existing attempt number
     max_attempt = 0
@@ -599,7 +600,7 @@ def add_default_obj(scene):
 
 # === IMPORT OBJECTS ===
 
-def import_obj(scene, obj_path):
+def import_obj(scene, obj_path, obj_ext):
     
     label_names = []
 
@@ -620,11 +621,25 @@ def import_obj(scene, obj_path):
         for obj_folder in obj_folders:
             obj_name = os.path.basename(os.path.dirname(obj_folder))
             
-            # Make path for current object
-            file_path = os.path.join(obj_folder, f"{obj_name}.obj")
             
-            # Import current object
-            bpy.ops.wm.obj_import(filepath=file_path)
+            # Make path for current object
+            file_path = os.path.join(obj_folder, f"{obj_name}{obj_ext}") # obj_ext includes the dot "."
+            
+            # Import current object based on extension
+            if obj_ext == '.obj':
+                bpy.ops.wm.obj_import(filepath=file_path)
+            elif obj_ext == '.ply':
+                bpy.ops.wm.ply_import.fbx(filepath=file_path)
+            elif obj_ext == '.stl':
+                bpy.ops.wm.stl_import.fbx(filepath=file_path)
+            elif obj_ext in ('.usd', '.usdc', '.usda'):
+                bpy.ops.wm.usd_import(filepath=file_path)
+            elif obj_ext == '.fbx':
+                bpy.ops.import_scene.fbx(filepath=file_path)
+            elif obj_ext in ('.gltf', '.glb'):
+                bpy.ops.import_scene.gltf(filepath=file_path)
+            else:
+                raise ValueError(f"Unsupported file extension: {obj_ext}")
             
             # Get the imported object
             new_obj = bpy.context.view_layer.objects.active
@@ -658,10 +673,10 @@ def main(args):
 
     # Renderer setup
     scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    scene.render.resolution_percentage = args.render_percentage * 100
+    scene.render.resolution_percentage = int(args.render_percentage * 100)
 
     
-    label_names = import_obj(scene, args.obj_path)
+    label_names = import_obj(scene, args.obj_path, args.obj_ext)
     
     # Give each object a unique pass index and record their coresponding labels
     pass_index_to_label = {}
@@ -676,7 +691,6 @@ def main(args):
 
     # Set the output folder
     output_folder = setup_output_folder(args.output_path, args.light_on)
-    print(f"Set up output folder: {output_folder}")
     
     # Stores initial object transforms
     original_transforms = {} 
@@ -726,6 +740,7 @@ def main(args):
     for obj in scene.objects:
         obj.pass_index = 0
 
+    print(f"Output folder: {output_folder}")
     #print("\n======================================== Render loop is finished ========================================\n")
 
 
@@ -768,6 +783,11 @@ def parse_args(argv):
         help = "Number of distractors visible in the 3D scene.", 
         default = NUM_DISTRACTOR, 
         type = int)
+    
+    parser.add_argument("--obj_ext", 
+        help = "File extension of the 3D objects.", 
+        default = OBJ_EXT, 
+        choices=['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb'])
     
     parser.add_argument("--light_energy", 
         help = "how strong the light is.", 
@@ -840,3 +860,7 @@ if __name__ == "__main__":
     end_time = time.time()
     execution_time = end_time - start_time
     print(f"\nTotal execution time: {execution_time:.2f} seconds")
+
+    num_img_gerenated = args.iteration * args.num_obj * args.num_pics
+    print(f"Total images generated: {num_img_gerenated}")
+    print(f"Average time per image: {execution_time / num_img_gerenated:.2f} seconds")
