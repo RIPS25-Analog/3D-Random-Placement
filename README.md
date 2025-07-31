@@ -1,6 +1,6 @@
 # 3D-Data-Generation
 
-Generate synthetic data from 3D assets for object detection tasks.
+Generate synthetic data using 3D assets for object detection tasks.
 
 ## Files and Software Needed
 
@@ -53,19 +53,15 @@ Generate synthetic data from 3D assets for object detection tasks.
 
 ## How to Generate Data
 
-1. Open ```data_generation_and_processing.ipynb```, change the absolute paths, and run the first cell. Change parameters accordingly.
-2. Open a Blender file, load ```generate_data.py```, change the absolute paths, and run the script. This script will clea the current active scene, so the best practice is to open a new file or create a new scene before running.
+1. Open ```data_generation_and_processing.ipynb```. Change the absolute paths. Change parameters accordingly. Run the first cell. 
+2. Open a Blender file. Go to Scripting section on the top bar. Click on the folder icon that reads "Open Text" and load ```generate_data.py```. Change the absolute paths and parameters, and run the cript. This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
 
 Note: Using absolute path is safer if we're not agreeing with where Blender is installed.
-
-### Parameter explanations
-
-I will add to it later.
 
 ## What the Other Scripts Do
 
 - ```move_origin_to_center.py```: If the object's center is not at the center of the mesh, this script helps move the center to the center.
-- ```scale_to_right_size.py```: If the mesh of a screwdriver is 2 meters tall, this script helps rescale it back to a reasonable size --- the purpose of this is for simulating natural lighting.
+- ```scale_to_right_size.py```: If the mesh of a screwdriver is 2 meters tall, this script helps rescale it back to a reasonable size -- the purpose of this is to simulate natural lighting.
 - ```export_obj.py```: Once we're done pre-editing the meshes, run this script to save the objects.
     - Supported format: ['.obj', '.gltf', '.glb']
     - Has additional structure assumptions for Blender scene collections (see below)
