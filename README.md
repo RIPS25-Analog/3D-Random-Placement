@@ -10,7 +10,8 @@ Generate synthetic data for object detection tasks.
     - Supported format: ['.exr']
 - 3D object in one of the formats:
     - Supported format: ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
-    - Has additional structure assumptions (see below)
+    - Has additional folder structure assumptions (see below)
+        - If you run the script ```export_obj.py```, it will automatically generate the correct structure
 
 ```
 ├── data/                            
@@ -63,7 +64,7 @@ Note: Using absolute path is safer if we're not agreeing with where Blender is i
 - ```scale_to_right_size.py```: If the mesh of a screwdriver is 2 meters tall, this script helps rescale it back to a reasonable size --- the purpose of this is for simulating natural lighting.
 - ```export_obj.py```: Once we're done pre-editing the meshes, run this script to save the objects.
     - Supported format: ['.obj', '.gltf', '.glb']
-    - Has additional structure assumptions (see below)
+    - Has additional structure assumptions for Blender scene collections (see below)
 ```
 ├── Scene/                            
 |   ├── Scene Collection/
