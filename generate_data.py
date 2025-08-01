@@ -19,9 +19,13 @@ import time
 
 # === ADJUSTABLE ARGUMENTS ===
 
-OUTPUT_PATH = r"output"
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
+OUTPUT_PATH = r"output"
+
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 OBJ_EXT = ".gltf"  # Change to the desired file extension
 
@@ -29,10 +33,10 @@ OBJ_EXT = ".gltf"  # Change to the desired file extension
 total pictures generated = iteration * num_obj * num_pics
 '''
 ITERATION = 1 # Number of scene/background, each with unique object arrangement
-NUM_OBJ = 4 # Number of objects selected to be visible on the scene
-NUM_PICS = 3 # Number of pictures taken around per object
+NUM_OBJ = 1 # Number of objects selected to be visible on the scene
+NUM_PICS = 1 # Number of pictures taken around per object
 
-NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
+NUM_DISTRACTOR = 5 # Number of distractors selected to be visible on the scene
 
 LIGHT_ENERGY = 40 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
@@ -660,7 +664,7 @@ def import_obj(scene, obj_path, obj_ext):
             
             # Make path for current object
             file_path = os.path.join(obj_folder, f"{obj_name}{obj_ext}") # obj_ext includes the dot "."
-            
+
             # Import current object based on extension
             if obj_ext == '.obj':
                 bpy.ops.wm.obj_import(filepath=file_path)
@@ -708,13 +712,11 @@ def main(args):
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     # Renderer setup
-    '''try:
-        scene.render.engine = 'CYCLES'
-        scene.cycles.device = 'GPU'
-        scene.cycles.samples = 128
+    try:
+        scene.render.engine = 'BLENDER_EEVEE_NEXT'
     except Exception:
-        scene.render.engine = 'BLENDER_EEVEE'''
-    scene.render.engine = 'CYCLES'
+        scene.render.engine = 'BLENDER_EEVEE'
+    #scene.render.engine = 'CYCLES'
     scene.render.resolution_percentage = int(args.render_percentage * 100)
 
     
