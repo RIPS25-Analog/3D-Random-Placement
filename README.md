@@ -4,7 +4,7 @@ Generate synthetic data using 3D assets for object detection tasks.
 
 ## Files and packages Needed
 
-- bpy 4.0.0 (some functions do not exists in the previous versions)
+- bpy 4.0.0 
 - mathutils
 - Python 3.11
 - HDRI files for background
@@ -56,9 +56,8 @@ Output structure
 
 ## How to Generate Data
 
-- From Jupyter Notebook: Open ```data_generation_and_processing.ipynb```. Change the paths. Change parameters accordingly. Run the first cell. 
-- From Terminal: :)
-- From Blender: Open a Blender file. Go to Scripting section on the top bar. Click on the folder icon that reads "Open Text" and load ```generate_data.py```. Change the absolute paths and parameters, and run the cript. This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
+- Without Blender: Open ```data_generation_and_processing.ipynb```. Change the paths. Change parameters accordingly. Run the first cell. 
+- With Blender: Open a Blender file. Go to Scripting section on the top bar. Click on the folder icon that reads "Open Text" and load ```generate_data.py```. Change the absolute paths and parameters, and run the cript. This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
 
 Note: Using absolute path is safer if we're not agreeing with where Blender is installed.
 

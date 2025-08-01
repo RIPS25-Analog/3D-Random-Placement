@@ -14,7 +14,7 @@ import time
 
 
 # Useful debug lines
-# bpy.ops.mesh.primitive_cube_add(size=0.2, location=camera.location) 
+# bpy.ops.mesh.primitive_cube_add(size=0.2, location=(0, 0, 0)) 
 # bpy.ops.mesh.primitive_uv_sphere_add(radius=0.2, location=camera.location)
 
 # === ADJUSTABLE ARGUMENTS ===
@@ -37,8 +37,8 @@ NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
 LIGHT_ENERGY = 40 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
 
-FILL_RATIO = 0.2 # Ratio of the center object size to the camera view size
-VISIBLE_PERCENTAGE = 0.3 # Minimum percentage of visible bounding box to be considered valid
+FILL_RATIO = 0.4 # Ratio of the center object size to the camera view size
+VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
 
 LIGHT_ON = True # Set to true if we want additional lighting
@@ -136,6 +136,43 @@ def translate_object(obj, center=CENTER, x_range=X_RANGE, y_range=Y_RANGE, z_ran
     x = random.uniform(center.x - x_range, center.x + x_range)
     y = random.uniform(center.y - y_range, center.y + y_range)
     z = random.uniform(center.z - z_range, center.z + z_range)
+    obj.location = (x, y, z)
+
+def translate_object_surface(obj, x_range, y_range, z_range, center=CENTER):
+    # Compute min and max bounds
+    x_min, x_max = center.x - x_range, center.x + x_range
+    y_min, y_max = center.y - y_range, center.y + y_range
+    z_min, z_max = center.z - z_range, center.z + z_range
+
+    # Randomly choose one face of the cube (6 faces = 3 axes × 2 sides)
+    face = random.choice(['x-', 'x+', 'y-', 'y+', 'z-', 'z+'])
+
+    # Set the coordinate for the selected face to min or max
+    if face == 'x-':
+        x = x_min
+        y = random.uniform(y_min, y_max)
+        z = random.uniform(z_min, z_max)
+    elif face == 'x+':
+        x = x_max
+        y = random.uniform(y_min, y_max)
+        z = random.uniform(z_min, z_max)
+    elif face == 'y-':
+        x = random.uniform(x_min, x_max)
+        y = y_min
+        z = random.uniform(z_min, z_max)
+    elif face == 'y+':
+        x = random.uniform(x_min, x_max)
+        y = y_max
+        z = random.uniform(z_min, z_max)
+    elif face == 'z-':
+        x = random.uniform(x_min, x_max)
+        y = random.uniform(y_min, y_max)
+        z = z_min
+    elif face == 'z+':
+        x = random.uniform(x_min, x_max)
+        y = random.uniform(y_min, y_max)
+        z = z_max
+
     obj.location = (x, y, z)
 
 def rotate_object(obj):
@@ -621,7 +658,6 @@ def import_obj(scene, obj_path, obj_ext):
         for obj_folder in obj_folders:
             obj_name = os.path.basename(os.path.dirname(obj_folder))
             
-            
             # Make path for current object
             file_path = os.path.join(obj_folder, f"{obj_name}{obj_ext}") # obj_ext includes the dot "."
             
@@ -631,7 +667,7 @@ def import_obj(scene, obj_path, obj_ext):
             elif obj_ext == '.ply':
                 bpy.ops.wm.ply_import.fbx(filepath=file_path)
             elif obj_ext == '.stl':
-                bpy.ops.wm.stl_import.fbx(filepath=file_path)
+                bpy.ops.wm.stl_import.stl(filepath=file_path)
             elif obj_ext in ('.usd', '.usdc', '.usda'):
                 bpy.ops.wm.usd_import(filepath=file_path)
             elif obj_ext == '.fbx':
@@ -672,10 +708,13 @@ def main(args):
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     # Renderer setup
-    try:
-        scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    '''try:
+        scene.render.engine = 'CYCLES'
+        scene.cycles.device = 'GPU'
+        scene.cycles.samples = 128
     except Exception:
-        scene.render.engine = 'BLENDER_EEVEE'
+        scene.render.engine = 'BLENDER_EEVEE'''
+    scene.render.engine = 'CYCLES'
     scene.render.resolution_percentage = int(args.render_percentage * 100)
 
     
@@ -714,10 +753,10 @@ def main(args):
 
         # Add random lighting
         if args.light_on:
-            translate_object(light, 
-                             x_range = args.light_distance, 
-                             y_range = args.light_distance, 
-                             z_range = args.light_distance)
+            translate_object_surface(light, 
+                                    x_range = args.light_distance, 
+                                    y_range = args.light_distance, 
+                                    z_range = args.light_distance)
             look_at(light, CENTER)     
 
         # Update the scene
@@ -726,7 +765,7 @@ def main(args):
         # Capture selected objects
         for obj, _label in selected_objects:
             capture_views(obj, camera, scene, depsgraph, selected_objects, args.visible_percentage, args.fill_ratio, 
-                          output_subfolder, pass_index_to_label, iter, args.save_files, args.use_ray_cast)
+                          output_subfolder, pass_index_to_label, iter, not args.dont_save, args.use_ray_cast)
 
         # Restore previous locations
         for obj, _label in selected_objects + selected_distractors:
@@ -821,8 +860,8 @@ def parse_args(argv):
         help = "Set to True if we want to add an additional light source.", 
         action = "store_true")
     
-    parser.add_argument("--save_files",
-        help = "Set to True if we want to store the images and labels.", 
+    parser.add_argument("--dont_save",
+        help = "Set to True if we don't want to store the images and labels.", 
         action = "store_true")
     
     parser.add_argument("--use_ray_cast",
@@ -846,8 +885,8 @@ def handle_argv():
         argv = [] # don't parse anything and use default values
         if LIGHT_ON:
             argv.append("--light_on")
-        if SAVE_FILES:
-            argv.append("--save_files")
+        if not SAVE_FILES:
+            argv.append("--dont_save")
         if USE_RAY_CAST:
             argv.append("--use_ray_cast")
 
