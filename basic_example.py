@@ -3,6 +3,10 @@ import bmesh
 import os
 from mathutils import Vector
 import math
+import time
+
+# Start timing the process
+start_time = time.time()
 
 # Clear existing mesh objects (but keep camera and lights)
 bpy.ops.object.select_all(action='DESELECT')
@@ -74,7 +78,25 @@ bpy.context.scene.camera = camera
 
 # Set render settings
 scene = bpy.context.scene
-scene.render.engine = 'CYCLES'  # or 'BLENDER_EEVEE' for faster rendering
+scene.render.engine = 'CYCLES'
+
+# Configure CUDA GPU rendering
+preferences = bpy.context.preferences
+cycles_preferences = preferences.addons['cycles'].preferences
+
+# Enable GPU compute
+cycles_preferences.compute_device_type = 'CUDA'
+
+# Get available CUDA devices and enable them
+cycles_preferences.get_devices()
+for device in cycles_preferences.devices:
+    if device.type == 'CUDA':
+        device.use = True
+        print(f"Enabled CUDA device: {device.name}")
+
+# Set scene to use GPU compute
+scene.cycles.device = 'GPU'
+
 scene.render.image_settings.file_format = 'PNG'
 scene.render.resolution_x = 1920
 scene.render.resolution_y = 1080
@@ -121,4 +143,11 @@ for i, pos in enumerate(camera_positions):
     bpy.ops.render.render(write_still=True)
     print(f"Rendered angle {i+1}/{len(camera_positions)}: {scene.render.filepath}")
 
+# Calculate and print total time
+end_time = time.time()
+total_time = end_time - start_time
+minutes = int(total_time // 60)
+seconds = total_time % 60
+
 print("All renders completed successfully!")
+print(f"Total generation time: {minutes}m {seconds:.2f}s")
