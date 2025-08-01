@@ -23,9 +23,9 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"output"
 
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects_not_used"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
 
 OBJ_EXT = ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
@@ -595,7 +595,7 @@ def get_selected_objects(original_transforms, label_names, num_obj, num_distract
 
 
 
-# === CLEAR STAGE ===
+# === INITIAL SETUPS ===
 
 def traverse_tree(t):
     yield t
@@ -643,9 +643,6 @@ def add_default_obj(scene):
     scene.collection.objects.link(light_object)
 
     return camera_object, light_object
-
-
-# === IMPORT OBJECTS ===
 
 def import_obj(scene, obj_path):
     
@@ -699,6 +696,23 @@ def import_obj(scene, obj_path):
 
     return label_names  # Return the list of label names for further processing
 
+def render_setup(scene, render_percentage):
+    # Renderer setup
+    scene.render.engine = 'CYCLES'
+
+    prefs = bpy.context.preferences.addons['cycles'].preferences
+    prefs.compute_device_type = 'CUDA'
+    prefs.get_devices()  # Populate available devices
+    prefs.use_cuda = True
+
+    # Activate all GPU devices (optional but common)
+    for device in prefs.devices:
+        device.use = True
+
+    scene.cycles.device = 'GPU'
+    scene.cycles.samples = 128 
+    scene.cycles.tile_size = 256
+    scene.render.resolution_percentage = int(render_percentage * 100)
 
 
 # === MAIN FUNCTION ===
@@ -708,16 +722,11 @@ def main(args):
     scene = bpy.context.scene
 
     clear_stage(scene)
+    render_setup(scene, args.render_percentage)
 
     # Add default camera and light
     camera, light = add_default_obj(scene)
     depsgraph = bpy.context.evaluated_depsgraph_get()
-
-    # Renderer setup
-    scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    #scene.render.engine = 'CYCLES'
-    scene.render.resolution_percentage = int(args.render_percentage * 100)
-
     
     label_names = import_obj(scene, args.obj_path)
     
