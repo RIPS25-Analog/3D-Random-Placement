@@ -23,18 +23,19 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"output"
 
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
 OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
+'''
 
-OBJ_EXT = ".gltf"  # Change to the desired file extension
+OBJ_EXT = ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
 '''
 total pictures generated = iteration * num_obj * num_pics
 '''
 ITERATION = 1 # Number of scene/background, each with unique object arrangement
-NUM_OBJ = 1 # Number of objects selected to be visible on the scene
-NUM_PICS = 1 # Number of pictures taken around per object
+NUM_OBJ = 12 # Number of objects selected to be visible on the scene
+NUM_PICS = 4 # Number of pictures taken around per object
 
 NUM_DISTRACTOR = 5 # Number of distractors selected to be visible on the scene
 
@@ -641,7 +642,7 @@ def add_default_obj(scene):
 
 # === IMPORT OBJECTS ===
 
-def import_obj(scene, obj_path, obj_ext):
+def import_obj(scene, obj_path):
     
     label_names = []
 
@@ -661,25 +662,27 @@ def import_obj(scene, obj_path, obj_ext):
         obj_folders = glob.glob(f"{category_folder}/*/")
         for obj_folder in obj_folders:
             obj_name = os.path.basename(os.path.dirname(obj_folder))
-            
-            # Make path for current object
-            file_path = os.path.join(obj_folder, f"{obj_name}{obj_ext}") # obj_ext includes the dot "."
 
-            # Import current object based on extension
-            if obj_ext == '.obj':
-                bpy.ops.wm.obj_import(filepath=file_path)
-            elif obj_ext == '.ply':
-                bpy.ops.wm.ply_import.fbx(filepath=file_path)
-            elif obj_ext == '.stl':
-                bpy.ops.wm.stl_import.stl(filepath=file_path)
-            elif obj_ext in ('.usd', '.usdc', '.usda'):
-                bpy.ops.wm.usd_import(filepath=file_path)
-            elif obj_ext == '.fbx':
-                bpy.ops.import_scene.fbx(filepath=file_path)
-            elif obj_ext in ('.gltf', '.glb'):
-                bpy.ops.import_scene.gltf(filepath=file_path)
-            else:
-                raise ValueError(f"Unsupported file extension: {obj_ext}")
+            # Iterate through all files in the object folder
+            for file_path in glob.glob(f"{obj_folder}/*"):
+                # Get the file extension
+                obj_ext = os.path.splitext(file_path)[1].lower()
+
+                # Import the object based on its file extension
+                if obj_ext in OBJ_EXT:
+                    if obj_ext == '.obj':
+                        bpy.ops.wm.obj_import(filepath=file_path)
+                    elif obj_ext == '.ply':
+                        bpy.ops.wm.ply_import(filepath=file_path)
+                    elif obj_ext == '.stl':
+                        bpy.ops.wm.stl_import(filepath=file_path)
+                    elif obj_ext in ('.usd', '.usdc', '.usda'):
+                        bpy.ops.wm.usd_import(filepath=file_path)
+                    elif obj_ext == '.fbx':
+                        bpy.ops.import_scene.fbx(filepath=file_path)
+                    elif obj_ext in ('.gltf', '.glb'):
+                        bpy.ops.import_scene.gltf(filepath=file_path)
+            
             
             # Get the imported object
             new_obj = bpy.context.view_layer.objects.active
@@ -720,7 +723,7 @@ def main(args):
     scene.render.resolution_percentage = int(args.render_percentage * 100)
 
     
-    label_names = import_obj(scene, args.obj_path, args.obj_ext)
+    label_names = import_obj(scene, args.obj_path)
     
     # Give each object a unique pass index and record their coresponding labels
     pass_index_to_label = {}
@@ -827,11 +830,6 @@ def parse_args(argv):
         help = "Number of distractors visible in the 3D scene.", 
         default = NUM_DISTRACTOR, 
         type = int)
-    
-    parser.add_argument("--obj_ext", 
-        help = "File extension of the 3D objects.", 
-        default = OBJ_EXT, 
-        choices=['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb'])
     
     parser.add_argument("--light_energy", 
         help = "how strong the light is.", 
