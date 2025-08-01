@@ -23,10 +23,10 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"output"
 
-r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
-OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects_not_used"
 OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
-'''
+
 
 OBJ_EXT = ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
@@ -196,6 +196,9 @@ def rotate_object(obj):
 # === ADD BACKGROUND ===
 
 def add_hdri_background(scene, hdri_path):
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new("GeneratedWorld")
+
     world = scene.world
     world.use_nodes = True
     nodes = world.node_tree.nodes
@@ -639,6 +642,8 @@ def add_default_obj(scene):
     # Link light to scene
     scene.collection.objects.link(light_object)
 
+    return camera_object, light_object
+
 
 # === IMPORT OBJECTS ===
 
@@ -661,7 +666,6 @@ def import_obj(scene, obj_path):
         # Iterate through all object folders in the category
         obj_folders = glob.glob(f"{category_folder}/*/")
         for obj_folder in obj_folders:
-            obj_name = os.path.basename(os.path.dirname(obj_folder))
 
             # Iterate through all files in the object folder
             for file_path in glob.glob(f"{obj_folder}/*"):
@@ -682,13 +686,10 @@ def import_obj(scene, obj_path):
                         bpy.ops.import_scene.fbx(filepath=file_path)
                     elif obj_ext in ('.gltf', '.glb'):
                         bpy.ops.import_scene.gltf(filepath=file_path)
-            
+                    break  # Stop after the first valid file
             
             # Get the imported object
             new_obj = bpy.context.view_layer.objects.active
-            
-            if not new_obj:
-                continue
             
             for coll in new_obj.users_collection:
                 coll.objects.unlink(new_obj)
@@ -707,18 +708,13 @@ def main(args):
     scene = bpy.context.scene
 
     clear_stage(scene)
-    add_default_obj(scene)
 
-    # Common object setups
-    camera = scene.camera
-    light = scene.objects["Sun"]
+    # Add default camera and light
+    camera, light = add_default_obj(scene)
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     # Renderer setup
-    try:
-        scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    except Exception:
-        scene.render.engine = 'BLENDER_EEVEE'
+    scene.render.engine = 'BLENDER_EEVEE_NEXT'
     #scene.render.engine = 'CYCLES'
     scene.render.resolution_percentage = int(args.render_percentage * 100)
 
