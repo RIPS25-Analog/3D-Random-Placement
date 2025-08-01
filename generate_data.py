@@ -45,8 +45,6 @@ LIGHT_ON = True # Set to true if we want additional lighting
 SAVE_FILES = True # Set to true if we want to render the final images
 USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
 
-
-
 # === INTERNAL VARIABLES ===
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
@@ -56,8 +54,6 @@ Z_RANGE = 0.2 # Range for Z-axis
 
 TARGET_SIZE = 0.2 # Target size for objects after scaling
 EPS = 0.05 # Size deviation for randomness
-
-
 
 # === DEFINE CAMERA BEHAVIOR ===
 
@@ -103,8 +99,6 @@ def zoom_on_object(camera, center, bbox_corners, fill_ratio, depsgraph):
     forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
     camera.location += forward - forward / fill_ratio
 
-
-
 # === OBJECTS AUGMENTATION ===
 
 def rescale_object(obj, target_size=TARGET_SIZE, eps=EPS, apply=True): 
@@ -148,8 +142,6 @@ def rotate_object(obj):
         random.uniform(0, 2 * np.pi),  # Y axis
         random.uniform(0, 2 * np.pi)   # Z axis
     )
-
-
 
 # === ADD BACKGROUND ===
 
@@ -624,7 +616,7 @@ def import_obj(scene, obj_path, obj_ext):
             
             # Make path for current object
             file_path = os.path.join(obj_folder, f"{obj_name}{obj_ext}") # obj_ext includes the dot "."
-            
+            print(f"Importing object: {file_path}")
             # Import current object based on extension
             if obj_ext == '.obj':
                 bpy.ops.wm.obj_import(filepath=file_path)
@@ -671,11 +663,25 @@ def main(args):
     light = scene.objects["Sun"]
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
-    # Renderer setup
-    try:
-        scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    except Exception:
-        scene.render.engine = 'BLENDER_EEVEE'
+    # # Renderer setup
+    # try:
+    #     scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    # except Exception:
+    #     scene.render.engine = 'BLENDER_EEVEE'
+
+    scene.render.engine = 'CYCLES'
+    bpy.context.scene.cycles.device = 'GPU'
+    bpy.context.preferences.addons['cycles'].preferences.compute_device_type = 'CUDA' # Or 'OPTIX', 'HIP', 'METAL'
+    
+    # # Set GPU preferences (even if not using Cycles)
+    prefs = bpy.context.preferences
+    cprefs = prefs.addons['cycles'].preferences
+    cprefs.compute_device_type = 'CUDA'  # or 'OPTIX', 'METAL', 'OPENCL'
+
+    # # Enable all devices
+    for device in cprefs.devices:
+        device.use = True
+
     scene.render.resolution_percentage = int(args.render_percentage * 100)
 
     
@@ -745,8 +751,6 @@ def main(args):
 
     print(f"Output folder: {output_folder}")
     print("\n======================================== Render loop is finished ========================================\n")
-
-
 
 # === ARGUMENT PARSING ===
 
