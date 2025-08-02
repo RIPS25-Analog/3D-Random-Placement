@@ -35,6 +35,7 @@ for i, gltf_filepath in enumerate(gltf_files):
         # Position objects so they don't overlap
         for obj in imported:
             obj.location.x += i * 3  # Spread objects along X-axis
+            obj.scale = (2.0, 2.0, 2.0)  # Scale up objects by 2x
         
         print(f"GLTF model imported from {gltf_filepath} successfully!")
 
@@ -84,7 +85,6 @@ scene.render.engine = 'CYCLES'
 preferences = bpy.context.preferences
 cycles_preferences = preferences.addons['cycles'].preferences
 
-# Enable GPU compute
 cycles_preferences.compute_device_type = 'CUDA'
 
 # Get available CUDA devices and enable them
@@ -97,7 +97,12 @@ for device in cycles_preferences.devices:
 # Set scene to use GPU compute
 scene.cycles.device = 'GPU'
 
-scene.render.image_settings.file_format = 'PNG'
+# scene.render.image_settings.file_format = 'PNG'
+scene.cycles.samples = 1
+scene.cycles.use_adaptive_sampling = True
+scene.cycles.use_denoising = True
+scene.cycles.tile_size = 4096
+scene.cycles.use_progressive_refine = False
 scene.render.resolution_x = 1920
 scene.render.resolution_y = 1080
 scene.render.filepath = "/home/data/3d_render/output/render_"

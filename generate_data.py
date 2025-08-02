@@ -3,6 +3,7 @@ import mathutils
 import bpy_extras
 import numpy as np
 import random
+random.seed(0)
 
 import os
 import glob
@@ -37,9 +38,9 @@ NUM_DISTRACTOR = 3 # Number of distractors selected to be visible on the scene
 LIGHT_ENERGY = 40 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
 
-FILL_RATIO = 0.2 # Ratio of the center object size to the camera view size
+FILL_RATIO = 0.5 # Ratio of the center object size to the camera view size
 VISIBLE_PERCENTAGE = 0.3 # Minimum percentage of visible bounding box to be considered valid
-RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
+RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
 
 LIGHT_ON = True # Set to true if we want additional lighting
 SAVE_FILES = True # Set to true if we want to render the final images
@@ -460,11 +461,11 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
 
 # === PRE-RENDER SETUP ===
 
-def setup_pass_index_to_label(lable_names):
+def setup_pass_index_to_label(label_names):
     pass_index_to_label = dict()
     pass_index = 1
 
-    for label in lable_names:
+    for label in label_names:
         # Get the collection of objects belonging to the same label class
         collection = bpy.data.collections[label]
 
@@ -663,11 +664,8 @@ def main(args):
     light = scene.objects["Sun"]
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
-    # # Renderer setup
-    # try:
-    #     scene.render.engine = 'BLENDER_EEVEE_NEXT'
-    # except Exception:
-    #     scene.render.engine = 'BLENDER_EEVEE'
+    # scene.render.engine = 'BLENDER_EEVEE'
+    # scene.eevee.taa_render_samples = 32
 
     scene.render.engine = 'CYCLES'
     bpy.context.scene.cycles.device = 'GPU'
@@ -681,6 +679,11 @@ def main(args):
     # # Enable all devices
     for device in cprefs.devices:
         device.use = True
+
+    scene.cycles.samples = 1
+    # scene.cycles.use_adaptive_sampling = True
+    # scene.cycles.use_denoising = True
+    scene.cycles.tile_size = 4096
 
     scene.render.resolution_percentage = int(args.render_percentage * 100)
 

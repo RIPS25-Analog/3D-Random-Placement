@@ -4,6 +4,7 @@ data/
 backups/
 test/
 output/
+*.code-workspace
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
