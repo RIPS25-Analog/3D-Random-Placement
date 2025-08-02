@@ -23,9 +23,9 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"output"
 
-r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
-OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects_not_used"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 
 OBJ_EXT = ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
@@ -37,15 +37,23 @@ ITERATION = 1 # Number of scene/background, each with unique object arrangement
 NUM_OBJ = 12 # Number of objects selected to be visible on the scene
 NUM_PICS = 4 # Number of pictures taken around per object
 
+'''
+scene arrangements
+'''
 NUM_DISTRACTOR = 5 # Number of distractors selected to be visible on the scene
-
 LIGHT_ENERGY = 40 # How strong the light is
 LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
 
+'''
+percentage settings
+'''
 FILL_RATIO = 0.4 # Ratio of the center object size to the camera view size
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
 
+'''
+boolen settings: add/remove the following flags to/from the command line
+'''
 LIGHT_ON = True # Set to true if we want additional lighting
 SAVE_FILES = True # Set to true if we want to render the final images
 USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
@@ -121,20 +129,14 @@ def rescale_object(obj, target_size=TARGET_SIZE, eps=EPS, apply=True):
     max_corner = mathutils.Vector(map(max, zip(*bbox_corners)))
     dimensions = max_corner - min_corner
 
-    # Find largest dimension (width, height, depth)
+    # Calculate and apply the scale factor
     current_size = max(dimensions)
-
     final_size = target_size + random.uniform(-eps, eps)
-
-    # Compute scale factor
     scale_factor = final_size / current_size
-
-    # Apply uniform scaling to the object
     obj.scale *= scale_factor
 
     if apply:
-        # Apply the scale to avoid future issues
-        bpy.context.view_layer.update()  # update for bbox recalculation
+        bpy.context.view_layer.update()
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
 def translate_object(obj, center=CENTER, x_range=X_RANGE, y_range=Y_RANGE, z_range=Z_RANGE):
@@ -557,6 +559,9 @@ def get_selected_objects(original_transforms, label_names, num_obj, num_distract
     all_objects = [] # (obj, label)
     all_distractors = [] # (obj, label)
 
+    selected_objects = []
+    selected_distractors = []
+
     # Select all objects from the scene
     for label in label_names:
         collection = bpy.data.collections[label]
@@ -564,17 +569,29 @@ def get_selected_objects(original_transforms, label_names, num_obj, num_distract
             if obj.type == 'MESH':
                 obj.hide_render = True
                 all_objects.append((obj, label))
-
-    # Select all distractors from the scene
-    distractors = bpy.data.collections["distractors"]
-    for distractor in distractors.objects:
-        if distractor.type == 'MESH':
-            distractor.hide_render = True
-            all_distractors.append((distractor, "distractors"))
-
+    
     # Randomly select some of the objects
     selected_objects = random.sample(all_objects, min(num_obj, len(all_objects)))
-    selected_distractors = random.sample(all_distractors, min(num_distractor, len(all_distractors)))
+
+    # Select all distractors from the scene
+    if "distractors" in bpy.data.collections:
+        distractors = bpy.data.collections["distractors"]
+        for distractor in distractors.objects:
+            if distractor.type == 'MESH':
+                distractor.hide_render = True
+                all_distractors.append((distractor, "distractors"))
+        
+        selected_distractors = random.sample(all_distractors, min(num_distractor, len(all_distractors)))
+
+    '''print("All objects: " + str([obj.name for obj in bpy.data.objects]))
+    print("multi-user meshs: " + str([obj.name for obj in bpy.data.meshes if obj.users > 1]))
+    
+
+    mesh = bpy.data.meshes["obj_000461"]
+    users = [obj for obj in bpy.data.objects if obj.type == 'MESH' and obj.data == mesh]
+    print(f"Objects using mesh '{mesh.name}': {[obj.name for obj in users]}")'''
+
+
 
     for obj, _label in selected_objects + selected_distractors:
         obj.hide_render = False
@@ -713,6 +730,7 @@ def render_setup(scene, render_percentage):
     scene.cycles.samples = 128 
     scene.cycles.tile_size = 256
     scene.render.resolution_percentage = int(render_percentage * 100)
+
 
 
 # === MAIN FUNCTION ===
