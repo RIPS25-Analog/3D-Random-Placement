@@ -43,13 +43,19 @@ scene arrangements
 '''
 NUM_DISTRACTOR = 5 # Number of distractors selected to be visible on the scene
 LIGHT_ENERGY = 40 # How strong the light is
-LIGHT_DISTANCE = 10 # How far the light is from the center of the scene
+LIGHT_DISTANCE = 20 # How far the light is from the center of the scene
 
 '''
-percentage settings
+appearance settings
 '''
 FILL_RATIO = 0.4 # Ratio of the center object size to the camera view size
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
+
+'''
+render settings
+'''
+SAMPLES = 1 # Number of samples per image
+TILE_SIZE = 4096 # Tile size for rendering
 RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
 
 '''
@@ -557,7 +563,7 @@ def setup_output_folder(output_path, save_files):
         with open(yaml_path, "w") as f:
             yaml.dump(vars(args), f)
 
-    return output_folder
+    return output_folder, yaml_path
 
 def get_selected_objects(original_transforms, label_names, num_obj, num_distractor):
     all_objects = [] # (obj, label)
@@ -721,10 +727,15 @@ def render_setup(scene, render_percentage):
     # Activate all GPU devices (optional but common)
     for device in prefs.devices:
         device.use = True
+    
+    scene.cycles.samples = args.samples
+    scene.cycles.tile_size = args.tile_size
 
+    scene.cycles.use_adaptive_sampling = True
+    scene.cycles.use_denoising = True
+    scene.cycles.use_progressive_refine = False
     scene.cycles.device = 'GPU'
-    scene.cycles.samples = 128 
-    scene.cycles.tile_size = 256
+
     scene.render.resolution_percentage = int(render_percentage * 100)
 
 
@@ -732,6 +743,8 @@ def render_setup(scene, render_percentage):
 # === MAIN FUNCTION ===
 
 def main(args):
+    start_time = time.time()
+
     print("Main is running")
     scene = bpy.context.scene
 
@@ -753,7 +766,7 @@ def main(args):
     light.data.energy = max(args.light_energy, 0)
 
     # Set the output folder
-    output_folder = setup_output_folder(args.output_path, not args.dont_save)
+    output_folder, yaml_path = setup_output_folder(args.output_path, not args.dont_save)
     
     # Stores initial object transforms
     original_transforms = {} 
@@ -805,6 +818,18 @@ def main(args):
 
     print(f"Output folder: {output_folder}")
     print("\n======================================== Render loop is finished ========================================\n")
+
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"\nTotal execution time: {execution_time:.2f} seconds")
+
+    num_img_gerenated = args.iteration * args.num_obj * args.num_pics
+    print(f"Total images generated: {num_img_gerenated}")
+    time_per_image = execution_time / num_img_gerenated if num_img_gerenated > 0 else 0
+    print(f"Average time per image: {time_per_image:.2f} seconds")
+
+    with open(yaml_path, "a") as f:
+        yaml.dump({"time_per_image": time_per_image}, f)
 
 
 
@@ -872,6 +897,16 @@ def parse_args(argv):
         default = RENDER_PERCENTAGE, 
         type = float)
     
+    parser.add_argument("--samples",
+        help = "Number of samples per image.", 
+        default = SAMPLES, 
+        type = int)
+    
+    parser.add_argument("--tile_size",
+        help = "Tile size for rendering.", 
+        default = TILE_SIZE, 
+        type = int)
+    
     parser.add_argument("--dont_save",
         help = "Set to True if we don't want to store the images and labels.", 
         action = "store_true")
@@ -908,17 +943,6 @@ def handle_argv():
 # === ENTRY POINT ===
 
 if __name__ == "__main__":
-    start_time = time.time()
-
-    # Main function call
     argv = handle_argv()
     args = parse_args(argv)
     main(args)
-
-    end_time = time.time()
-    execution_time = end_time - start_time
-    print(f"\nTotal execution time: {execution_time:.2f} seconds")
-
-    num_img_gerenated = args.iteration * args.num_obj * args.num_pics
-    print(f"Total images generated: {num_img_gerenated}")
-    print(f"Average time per image: {execution_time / num_img_gerenated:.2f} seconds")
