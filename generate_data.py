@@ -9,6 +9,7 @@ import glob
 import re
 import sys
 import argparse
+import yaml
 
 import time
 
@@ -23,19 +24,19 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"output"
 
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
 
-OBJ_EXT = ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
+OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
 '''
 total pictures generated = iteration * num_obj * num_pics
 '''
-ITERATION = 1 # Number of scene/background, each with unique object arrangement
-NUM_OBJ = 12 # Number of objects selected to be visible on the scene
-NUM_PICS = 4 # Number of pictures taken around per object
+ITERATION = 100 # Number of scene/background, each with unique object arrangement
+NUM_OBJ = 3 # Number of objects selected to be visible on the scene
+NUM_PICS = 20 # Number of pictures taken around per object
 
 '''
 scene arrangements
@@ -52,9 +53,8 @@ VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be cons
 RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
 
 '''
-boolen settings: add/remove the following flags to/from the command line
+boolen settings
 '''
-LIGHT_ON = True # Set to true if we want additional lighting
 SAVE_FILES = True # Set to true if we want to render the final images
 USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
 
@@ -531,9 +531,9 @@ def setup_pass_index_to_label(lable_names):
 
     return pass_index_to_label
 
-def setup_output_folder(output_path, light_on):
+def setup_output_folder(output_path, save_files):
     # Regex to match folders like: attempt_#
-    pattern = re.compile(r"attempt_(\d+)_light_(on|off)")
+    pattern = re.compile(r"attempt_(\d+)")
 
     # Find the highest existing attempt number
     max_attempt = 0
@@ -548,10 +548,14 @@ def setup_output_folder(output_path, light_on):
 
     # Prepare output directories
     output_folder = os.path.join(output_path, f"attempt_{next_attempt}")
-    if light_on:
-        output_folder += "_light_on"
-    else:
-        output_folder += "_light_off"
+
+    if save_files:
+        # Create the output folder
+        os.makedirs(output_folder, exist_ok=True)
+
+        yaml_path = os.path.join(output_folder, f"args_{next_attempt}.yaml")
+        with open(yaml_path, "w") as f:
+            yaml.dump(vars(args), f)
 
     return output_folder
 
@@ -582,16 +586,6 @@ def get_selected_objects(original_transforms, label_names, num_obj, num_distract
                 all_distractors.append((distractor, "distractors"))
         
         selected_distractors = random.sample(all_distractors, min(num_distractor, len(all_distractors)))
-
-    '''print("All objects: " + str([obj.name for obj in bpy.data.objects]))
-    print("multi-user meshs: " + str([obj.name for obj in bpy.data.meshes if obj.users > 1]))
-    
-
-    mesh = bpy.data.meshes["obj_000461"]
-    users = [obj for obj in bpy.data.objects if obj.type == 'MESH' and obj.data == mesh]
-    print(f"Objects using mesh '{mesh.name}': {[obj.name for obj in users]}")'''
-
-
 
     for obj, _label in selected_objects + selected_distractors:
         obj.hide_render = False
@@ -684,14 +678,16 @@ def import_obj(scene, obj_path):
             # Iterate through all files in the object folder
             for file_path in glob.glob(f"{obj_folder}/*"):
                 # Get the file extension
+                file_name = os.path.splitext(os.path.basename(file_path))[0]
+
                 obj_ext = os.path.splitext(file_path)[1].lower()
 
                 # Import the object based on its file extension
                 if obj_ext in OBJ_EXT:
+                    print(f"Importing {file_path}...")
+
                     if obj_ext == '.obj':
                         bpy.ops.wm.obj_import(filepath=file_path)
-                    elif obj_ext == '.ply':
-                        bpy.ops.wm.ply_import(filepath=file_path)
                     elif obj_ext == '.stl':
                         bpy.ops.wm.stl_import(filepath=file_path)
                     elif obj_ext in ('.usd', '.usdc', '.usda'):
@@ -700,10 +696,10 @@ def import_obj(scene, obj_path):
                         bpy.ops.import_scene.fbx(filepath=file_path)
                     elif obj_ext in ('.gltf', '.glb'):
                         bpy.ops.import_scene.gltf(filepath=file_path)
+                    
+                    new_obj = bpy.context.view_layer.objects.active
+                    new_obj.name = file_name  # Rename the object to the file name
                     break  # Stop after the first valid file
-            
-            # Get the imported object
-            new_obj = bpy.context.view_layer.objects.active
             
             for coll in new_obj.users_collection:
                 coll.objects.unlink(new_obj)
@@ -753,14 +749,11 @@ def main(args):
     if args.use_ray_cast:
         pass_index_to_label = setup_pass_index_to_label(label_names)
 
-    # Switch light on or off
-    if args.light_on:
-        light.data.energy = args.light_energy
-    else:
-        light.data.energy = 0
+    # Setup light energy
+    light.data.energy = max(args.light_energy, 0)
 
     # Set the output folder
-    output_folder = setup_output_folder(args.output_path, args.light_on)
+    output_folder = setup_output_folder(args.output_path, not args.dont_save)
     
     # Stores initial object transforms
     original_transforms = {} 
@@ -780,7 +773,7 @@ def main(args):
                                                                       args.num_obj, args.num_distractor)
 
         # Add random lighting
-        if args.light_on:
+        if args.light_energy > 0:
             translate_object_surface(light, 
                                     x_range = args.light_distance, 
                                     y_range = args.light_distance, 
@@ -879,10 +872,6 @@ def parse_args(argv):
         default = RENDER_PERCENTAGE, 
         type = float)
     
-    parser.add_argument("--light_on",
-        help = "Set to True if we want to add an additional light source.", 
-        action = "store_true")
-    
     parser.add_argument("--dont_save",
         help = "Set to True if we don't want to store the images and labels.", 
         action = "store_true")
@@ -906,8 +895,6 @@ def handle_argv():
         pass  
     else:
         argv = [] # don't parse anything and use default values
-        if LIGHT_ON:
-            argv.append("--light_on")
         if not SAVE_FILES:
             argv.append("--dont_save")
         if USE_RAY_CAST:

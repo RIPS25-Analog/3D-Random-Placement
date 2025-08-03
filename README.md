@@ -7,7 +7,7 @@ Generate synthetic data using 3D assets for object detection tasks.
 - HDRI files for background
     - Supported format: ['.exr']
 - 3D object in one of the formats:
-    - Supported format: ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
+    - Supported format: ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
     - Has additional folder structure assumptions (see below)
         - If you run the script ```export_obj.py```, it will automatically generate the correct structure.
 
