@@ -12,6 +12,7 @@ import argparse
 import yaml
 
 import time
+import gc
 
 
 # Useful debug lines
@@ -43,7 +44,7 @@ scene arrangements
 '''
 NUM_DISTRACTOR = 5 # Number of distractors selected to be visible on the scene
 LIGHT_ENERGY = 40 # How strong the light is
-LIGHT_DISTANCE = 20 # How far the light is from the center of the scene
+LIGHT_DISTANCE = 60 # How far the light is from the center of the scene
 
 '''
 appearance settings
@@ -54,7 +55,7 @@ VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be cons
 '''
 render settings
 '''
-SAMPLES = 1 # Number of samples per image
+SAMPLES = 16 # Number of samples per image
 TILE_SIZE = 4096 # Tile size for rendering
 RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
 
@@ -736,6 +737,7 @@ def render_setup(scene, render_percentage):
     scene.cycles.use_progressive_refine = False
     scene.cycles.device = 'GPU'
 
+    scene.render.use_persistent_data = False
     scene.render.resolution_percentage = int(render_percentage * 100)
 
 
@@ -801,12 +803,17 @@ def main(args):
             capture_views(obj, camera, scene, depsgraph, selected_objects, args.visible_percentage, args.fill_ratio, 
                           output_subfolder, pass_index_to_label, iter, not args.dont_save, args.use_ray_cast)
 
-        # Restore previous locations
-        for obj, _label in selected_objects + selected_distractors:
-            t = original_transforms[obj.name]
-            obj.location = t['location']
-            obj.rotation_euler = t['rotation']
-            obj.scale = t['scale']
+        bpy.ops.wm.read_homefile(use_empty=True)  # Clears scene
+
+        gc.collect()  # Python-level garbage collection
+    # End of iteration loop
+
+    # Restore previous locations
+    for obj, _label in selected_objects + selected_distractors:
+        t = original_transforms[obj.name]
+        obj.location = t['location']
+        obj.rotation_euler = t['rotation']
+        obj.scale = t['scale']
 
         # Clean up
         original_transforms.clear()
