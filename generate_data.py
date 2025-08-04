@@ -803,7 +803,7 @@ def main(args):
             capture_views(obj, camera, scene, depsgraph, selected_objects, args.visible_percentage, args.fill_ratio, 
                           output_subfolder, pass_index_to_label, iter, not args.dont_save, args.use_ray_cast)
 
-        bpy.ops.wm.read_homefile(use_empty=True)  # Clears scene
+        bpy.ops.outliner.orphans_purge()
 
         gc.collect()  # Python-level garbage collection
     # End of iteration loop
