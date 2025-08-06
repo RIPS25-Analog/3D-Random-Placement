@@ -26,7 +26,7 @@ OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
-ITERATION = 100 # Number of scene/backgrounds to generate
+ITERATION = 106 # Number of scene/backgrounds to generate
 NUM_PICS = 20 # Number of pictures taken around per object
 LIGHT_ENERGY = 60 # Maximum light intensity for the scene
 RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
@@ -746,7 +746,7 @@ def main(args):
     # Fetch hdri files
     hdri_files = glob.glob(args.hdri_path + r"/*.exr")
 
-    for iter in range(args.iteration):
+    for iter in range(min(args.iteration, len(hdri_files))):
         print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
 
         # Pick a background
