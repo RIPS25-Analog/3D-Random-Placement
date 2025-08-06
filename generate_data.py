@@ -13,15 +13,15 @@ import yaml
 
 import time
  
-RANDOM_SEED = 1 # For reproducibility
+RANDOM_SEED = 0 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"/home/data/3d_render/output"
 
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
@@ -693,9 +693,9 @@ def import_obj(scene, obj_path):
 def render_setup(scene, render_percentage):
     # Renderer setup
     scene.render.engine = 'CYCLES'
-    scene.render.engine = 'BLENDER_EEVEE'  # Use Cycles renderer
+    #scene.render.engine = 'BLENDER_EEVEE'
 
-    '''prefs = bpy.context.preferences.addons['cycles'].preferences
+    prefs = bpy.context.preferences.addons['cycles'].preferences
     prefs.compute_device_type = 'CUDA'
     prefs.get_devices()  # Populate available devices
     prefs.use_cuda = True
@@ -710,7 +710,7 @@ def render_setup(scene, render_percentage):
     scene.cycles.use_adaptive_sampling = True
     scene.cycles.use_denoising = True
     scene.cycles.use_progressive_refine = False
-    scene.cycles.device = "GPU"'''
+    scene.cycles.device = "GPU"
 
     scene.render.use_persistent_data = False
     scene.render.resolution_percentage = int(render_percentage * 100)
@@ -773,7 +773,7 @@ def main(args):
         bpy.context.view_layer.update()
 
         # Capture selected objects
-        for obj, _label in selected_objects:
+        for obj, _label in selected_objects + selected_distractors:
             capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, 
                           args.visible_percentage, args.num_pics, output_subfolder, iter, not args.dont_save)
 
