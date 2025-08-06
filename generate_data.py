@@ -17,7 +17,7 @@ RANDOM_SEED = 1 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
-OUTPUT_PATH = r"output"
+OUTPUT_PATH = r"/home/data/3d_render/output"
 
 HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
@@ -26,31 +26,15 @@ OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
-'''
-total pictures generated = iteration * num_obj * num_pics
-'''
 ITERATION = 100 # Number of scene/backgrounds to generate
 NUM_PICS = 20 # Number of pictures taken around per object
+LIGHT_ENERGY = 60 # Maximum light intensity for the scene
+RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
 
-'''
-randonmized numbers for scene arrangements
-'''
-NUM_OBJ = 3 # Minimum number of objects visible on the scene
-NUM_DISTRACTOR = 5 # Minimum number of distractors visible on the scene
-LIGHT_ENERGY = 40 # Maximum light intensity for the scene
-'''
-config settings
-'''
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAMPLES = 16 # Number of samples per image
 TILE_SIZE = 4096 # Tile size for rendering
-RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
-
-'''
-other settings
-'''
 SAVE_FILES = True # Set to true if we want to render the final images
-USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
 
 
 
@@ -113,22 +97,16 @@ def zoom_on_object(camera, center, bbox_corners, depsgraph):
     return min_distance
 
 def distance_too_close(camera, all_objects, min_distance):
-    debug_log = ""
     # Check if the camera is too close to any object
     for obj, _label in all_objects:
         bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
         center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
         distance = (camera.location - center).length
-
-        debug_log += f"Distance from camera to {obj.name}: {distance:.2f} (min: {min_distance:.2f})"
         
         if distance < min_distance * 0.9:
-            debug_log += " - Too close!\n"
-        #    return True  # Camera is too close to an object
-        else:
-            debug_log += "\n"
+            return True  # Camera is too close to an object
         
-    return debug_log  # Camera is at a safe distance from all objects
+    return False  # Camera is at a safe distance from all objects
 
 
 
@@ -465,8 +443,8 @@ def get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_labe
 
 # === RENDER AND SAVE FILES ===
 
-def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, visible_percentage, 
-                  num_pics, output_folder, pass_index_to_label, iter, save_files, use_ray_cast):
+def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, 
+                  visible_percentage, num_pics, output_folder, iter, save_files):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -483,20 +461,15 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_dist
         camera.location = get_viewpoint(center, max_dist)
         min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
 
-        while False:
+        while distance_too_close(camera, selected_objects + selected_distractors, min_distance):
             # If the camera is too close to any object, get a new viewpoint
             camera.location = get_viewpoint(center, max_dist)
             min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
 
-        debug_log = distance_too_close(camera, selected_objects + selected_distractors, min_distance)
-
         print(f"-------------------- View angle {i+1} --------------------")
         
         # Get bounding boxes for visible objects
-        if use_ray_cast:
-            visible_bboxes = get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_label)
-        else:
-            visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
+        visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
 
         if save_files:            
             file_name = f"{iter+1}_{obj.name}_{i+1}"
@@ -506,10 +479,6 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_dist
             scene.render.image_settings.color_mode = 'RGB'
             scene.render.filepath = img_path
             bpy.ops.render.render(write_still=True)
-
-            with open(os.path.join(output_folder, "images", f"{file_name}.txt"), "w") as f:
-                f.write(debug_log)
-                
             
             # Make sure the labels folder exists
             label_path = os.path.join(output_folder, "labels")
@@ -573,7 +542,7 @@ def setup_output_folder(output_path, save_files):
 
     return output_folder, yaml_path
 
-def get_selected_objects(label_names, num_obj, num_distractor):
+def get_selected_objects(label_names):
     all_objects = [] # (obj, label)
     all_distractors = [] # (obj, label)
 
@@ -589,7 +558,7 @@ def get_selected_objects(label_names, num_obj, num_distractor):
                 all_objects.append((obj, label))
     
     # Randomly select some of the objects
-    num_obj_ran = random.randint(num_obj, len(all_objects))
+    num_obj_ran = random.randint(0, 2)
     selected_objects = random.sample(all_objects, num_obj_ran)
 
     # Select all distractors from the scene
@@ -600,7 +569,8 @@ def get_selected_objects(label_names, num_obj, num_distractor):
                 distractor.hide_render = True
                 all_distractors.append((distractor, "distractors"))
         
-        num_distractor_ran = random.randint(num_distractor, len(all_distractors))
+        # Total objects is [3, 6]
+        num_distractor_ran = random.randint(3, 6) - num_obj_ran
         selected_distractors = random.sample(all_distractors, num_distractor_ran)
 
     for obj, _label in selected_objects + selected_distractors:
@@ -740,8 +710,7 @@ def render_setup(scene, render_percentage):
     scene.cycles.use_adaptive_sampling = True
     scene.cycles.use_denoising = True
     scene.cycles.use_progressive_refine = False
-    scene.cycles.device = 'GPU'
-    '''
+    scene.cycles.device = "GPU"'''
 
     scene.render.use_persistent_data = False
     scene.render.resolution_percentage = int(render_percentage * 100)
@@ -766,11 +735,6 @@ def main(args):
     depsgraph = bpy.context.evaluated_depsgraph_get()
     
     label_names = import_obj(scene, args.obj_path)
-    
-    # Give each object a unique pass index and record their coresponding labels
-    pass_index_to_label = {}
-    if args.use_ray_cast:
-        pass_index_to_label = setup_pass_index_to_label(label_names)
 
     # Setup light energy
     light_energy_ran = random.randint(0, args.light_energy)
@@ -795,8 +759,7 @@ def main(args):
         output_subfolder = os.path.join(output_folder, f"{iter+1}_{hdri_name}")
         
         # Randomly select objects to render
-        selected_objects, selected_distractors = get_selected_objects(label_names, 
-                                                                       args.num_obj, args.num_distractor)
+        selected_objects, selected_distractors = get_selected_objects(label_names)
 
         # Add random lighting
         if args.light_energy > 0:
@@ -811,15 +774,11 @@ def main(args):
 
         # Capture selected objects
         for obj, _label in selected_objects:
-            capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, args.visible_percentage, 
-                          args.num_pics, output_subfolder, pass_index_to_label, iter, not args.dont_save, args.use_ray_cast)
+            capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, 
+                          args.visible_percentage, args.num_pics, output_subfolder, iter, not args.dont_save)
 
         bpy.ops.outliner.orphans_purge()
     # End of iteration loop
-
-    # Reset pass index
-    for obj in scene.objects:
-        obj.pass_index = 0
 
     print(f"Output folder: {output_folder}")
     print("\n======================================== Render loop is finished ========================================\n")
@@ -828,13 +787,8 @@ def main(args):
     execution_time = end_time - start_time
     print(f"\nTotal execution time: {execution_time:.2f} seconds")
 
-    num_img_gerenated = args.iteration * args.num_obj * args.num_pics
-    print(f"Total images generated: {num_img_gerenated}")
-    time_per_image = execution_time / num_img_gerenated if num_img_gerenated > 0 else 0
-    print(f"Average time per image: {time_per_image:.2f} seconds")
-
     with open(yaml_path, "a") as f:
-        yaml.dump({"time_per_image": time_per_image}, f)
+        yaml.dump(f"\n# Total execution time: {execution_time:.2f} seconds", f)
 
 
 
@@ -862,20 +816,10 @@ def parse_args(argv):
         default = ITERATION, 
         type = int)
     
-    parser.add_argument("--num_obj", 
-        help = "Number of total objects visible in the 3D scene.", 
-        default = NUM_OBJ, 
-        type = int)
-    
     parser.add_argument("--num_pics", 
         help = "Number of objects visible in the 3D scene.", 
         default = NUM_PICS, 
         type=int)
-    
-    parser.add_argument("--num_distractor", 
-        help = "Number of distractors visible in the 3D scene.", 
-        default = NUM_DISTRACTOR, 
-        type = int)
     
     parser.add_argument("--light_energy", 
         help = "how strong the light is.", 
@@ -906,10 +850,6 @@ def parse_args(argv):
         help = "Set to True if we don't want to store the images and labels.", 
         action = "store_true")
     
-    parser.add_argument("--use_ray_cast",
-        help = "Set to True if we want to use ray cast for precise bbox detection (very slow).", 
-        action = "store_true")
-    
     parser.add_argument("--seed",
         help = "Set the random seed for reproducibility.", 
         default = RANDOM_SEED, 
@@ -932,8 +872,6 @@ def handle_argv():
         argv = [] # don't parse anything and use default values
         if not SAVE_FILES:
             argv.append("--dont_save")
-        if USE_RAY_CAST:
-            argv.append("--use_ray_cast")
 
     print(f"Arguments: {argv}")
     return argv
