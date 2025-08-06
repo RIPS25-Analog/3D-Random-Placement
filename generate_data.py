@@ -3,7 +3,6 @@ import mathutils
 import bpy_extras
 import numpy as np
 import random
-random.seed(0)
 
 import os
 import glob
@@ -14,42 +13,34 @@ import yaml
 
 import time
  
-RANDOM_SEED = 1 # For reproducibility
+DEFAULT_RANDOM_SEED = 0 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
-OUTPUT_PATH = r"output"
+OUTPUT_PATH = r"output-viktest"
 
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
-OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
-
+# HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+# OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
+# OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output-viktest"
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
-'''
-total pictures generated = iteration * num_obj * num_pics
-'''
+## total pictures generated = iteration * num_obj * num_pics
 ITERATION = 100 # Number of scene/backgrounds to generate
 NUM_PICS = 20 # Number of pictures taken around per object
 
-'''
-randonmized numbers for scene arrangements
-'''
+## randonmized numbers for scene arrangements
 NUM_OBJ = 3 # Minimum number of objects visible on the scene
 NUM_DISTRACTOR = 5 # Minimum number of distractors visible on the scene
 LIGHT_ENERGY = 40 # Maximum light intensity for the scene
-'''
-config settings
-'''
+
+## config settings
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAMPLES = 16 # Number of samples per image
 TILE_SIZE = 4096 # Tile size for rendering
 RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
 
-'''
-other settings
-'''
+## other settings
 SAVE_FILES = True # Set to true if we want to render the final images
 USE_RAY_CAST = False # Set to true if use ray cast for occulsion detection (very slow)
 
@@ -717,7 +708,7 @@ def import_obj(scene, obj_path):
 
 def render_setup(scene, render_percentage):
     # Renderer setup
-    scene.render.engine = 'CYCLES'
+    # scene.render.engine = 'CYCLES'
     scene.render.engine = 'BLENDER_EEVEE'  # Use Cycles renderer
 
     '''prefs = bpy.context.preferences.addons['cycles'].preferences
@@ -907,7 +898,7 @@ def parse_args(argv):
     
     parser.add_argument("--seed",
         help = "Set the random seed for reproducibility.", 
-        default = RANDOM_SEED, 
+        default = DEFAULT_RANDOM_SEED, 
         type = int)
     
     args = parser.parse_args(argv)
