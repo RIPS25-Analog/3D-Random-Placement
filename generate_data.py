@@ -13,15 +13,15 @@ import yaml
 
 import time
  
-RANDOM_SEED = 0 # For reproducibility
+RANDOM_SEED = 1 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"output"
 
-r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
@@ -44,7 +44,7 @@ config settings
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAMPLES = 16 # Number of samples per image
 TILE_SIZE = 4096 # Tile size for rendering
-RENDER_PERCENTAGE = 1 # Downscales the image, original size is 1920 x 1080
+RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
 
 '''
 other settings
@@ -101,27 +101,34 @@ def zoom_on_object(camera, center, bbox_corners, depsgraph):
     location, _scale = camera.camera_fit_coords(depsgraph, coords)
     camera.location = location
 
-    # Zoom away from the object
+    # Find the line of sight from the camera to the center of the object
     forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
+    min_distance = (camera.location - center).length
 
-    # Random fill ratio for zooming
+    # Zoom away from the object 
     fill_ratio = random.uniform(0.4, 1) 
     camera.location += forward - forward / fill_ratio
 
-    # return the forward vector for further use as minimum distance
-    return forward
+    # return the minimum distance
+    return min_distance
 
-def check_distance(camera, all_objects, min_distance):
+def distance_too_close(camera, all_objects, min_distance):
+    debug_log = ""
     # Check if the camera is too close to any object
-    for obj in all_objects:
+    for obj, _label in all_objects:
         bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
         center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
         distance = (camera.location - center).length
+
+        debug_log += f"Distance from camera to {obj.name}: {distance:.2f} (min: {min_distance:.2f})"
         
-        if distance < min_distance:
-            return False  # Camera is too close to an object
+        if distance < min_distance * 0.9:
+            debug_log += " - Too close!\n"
+        #    return True  # Camera is too close to an object
+        else:
+            debug_log += "\n"
         
-    return True  # Camera is at a safe distance from all objects
+    return debug_log  # Camera is at a safe distance from all objects
 
 
 
@@ -476,10 +483,12 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_dist
         camera.location = get_viewpoint(center, max_dist)
         min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
 
-        while check_distance(camera, selected_objects + selected_distractors, min_distance) is False:
+        while False:
             # If the camera is too close to any object, get a new viewpoint
             camera.location = get_viewpoint(center, max_dist)
             min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
+
+        debug_log = distance_too_close(camera, selected_objects + selected_distractors, min_distance)
 
         print(f"-------------------- View angle {i+1} --------------------")
         
@@ -497,6 +506,10 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_dist
             scene.render.image_settings.color_mode = 'RGB'
             scene.render.filepath = img_path
             bpy.ops.render.render(write_still=True)
+
+            with open(os.path.join(output_folder, "images", f"{file_name}.txt"), "w") as f:
+                f.write(debug_log)
+                
             
             # Make sure the labels folder exists
             label_path = os.path.join(output_folder, "labels")
@@ -624,6 +637,8 @@ def clear_stage(scene):
         if coll.name != "Scene Collection":
             scene.collection.children.unlink(coll)
 
+    bpy.ops.outliner.orphans_purge()
+
 def add_default_obj(scene):
     # Add new camera
     camera_data = bpy.data.cameras.new(name="Camera")
@@ -708,8 +723,9 @@ def import_obj(scene, obj_path):
 def render_setup(scene, render_percentage):
     # Renderer setup
     scene.render.engine = 'CYCLES'
+    scene.render.engine = 'BLENDER_EEVEE'  # Use Cycles renderer
 
-    prefs = bpy.context.preferences.addons['cycles'].preferences
+    '''prefs = bpy.context.preferences.addons['cycles'].preferences
     prefs.compute_device_type = 'CUDA'
     prefs.get_devices()  # Populate available devices
     prefs.use_cuda = True
@@ -725,6 +741,7 @@ def render_setup(scene, render_percentage):
     scene.cycles.use_denoising = True
     scene.cycles.use_progressive_refine = False
     scene.cycles.device = 'GPU'
+    '''
 
     scene.render.use_persistent_data = False
     scene.render.resolution_percentage = int(render_percentage * 100)
@@ -770,7 +787,8 @@ def main(args):
 
         # Pick a background
         selected_hdri = random.choice(hdri_files)
-        add_hdri_background(scene, hdri_files[iter % len(hdri_files)])
+        hdri_files.remove(selected_hdri)  # Remove the selected hdri to avoid repetition
+        add_hdri_background(scene, selected_hdri)
 
         # Make a subfolder for each iteration
         hdri_name = os.path.basename(selected_hdri).split('.')[0]
