@@ -17,7 +17,10 @@ DEFAULT_RANDOM_SEED = 0 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
-OUTPUT_PATH = r"output-viktest"
+OUTPUT_PATH = r"output"
+
+if not os.path.exists(OUTPUT_PATH):
+    os.makedirs(OUTPUT_PATH)
 
 # HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 # OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
@@ -25,8 +28,8 @@ OUTPUT_PATH = r"output-viktest"
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
-ITERATION = 106 # Number of scene/backgrounds to generate
-NUM_PICS = 20 # Number of pictures taken around per object
+ITERATION = 1 # Number of scene/backgrounds to generate
+NUM_PICS = 10 # Number of pictures taken around per object
 LIGHT_ENERGY = 60 # Maximum light intensity for the scene
 RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
 
@@ -700,12 +703,12 @@ def render_setup(scene, render_percentage):
     scene.cycles.samples = args.samples
     scene.cycles.tile_size = args.tile_size
 
+    # Performance optimizations
     scene.cycles.use_adaptive_sampling = True
     scene.cycles.use_denoising = True
     scene.cycles.use_progressive_refine = False
     scene.cycles.device = "GPU"
-
-    scene.render.use_persistent_data = False
+    scene.render.use_persistent_data = True
     scene.render.resolution_percentage = int(render_percentage * 100)
 
 
