@@ -68,26 +68,21 @@ EPS = 0.05 # Size deviation for randomness
 
 # === DEFINE CAMERA BEHAVIOR ===
 
-def get_viewpoints(center, radius):
-    viewpoints = []
+def get_viewpoint(center, max_dist):
+    z = 2 * random.random() - 1  # z ∈ [-1, 1]
+    theta = 2 * np.pi * random.random()
+    r_xy = np.sqrt(1 - z * z)
 
-    for i in range(NUM_PICS):
-        z = 2 * random.random() - 1  # z ∈ [-1, 1]
-        theta = 2 * np.pi * random.random()
-        r_xy = np.sqrt(1 - z * z)
+    x = r_xy * np.cos(theta)
+    y = r_xy * np.sin(theta)
 
-        x = r_xy * np.cos(theta)
-        y = r_xy * np.sin(theta)
-
-        # Apply radius and center offset
-        pos = (
-            center[0] + radius * x,
-            center[1] + radius * y,
-            center[2] + radius * z
-        )
-        viewpoints.append(pos)
-    
-    return viewpoints
+    # Apply radius and center offset
+    pos = (
+        center[0] + max_dist * x,
+        center[1] + max_dist * y,
+        center[2] + max_dist * z
+    )
+    return pos
 
 def look_at(obj, target):
     direction = (target - obj.location).normalized()
@@ -108,8 +103,25 @@ def zoom_on_object(camera, center, bbox_corners, depsgraph):
 
     # Zoom away from the object
     forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
-    fill_ratio = random.uniform(0.1, 1)  # Random fill ratio for zooming
+
+    # Random fill ratio for zooming
+    fill_ratio = random.uniform(0.4, 1) 
     camera.location += forward - forward / fill_ratio
+
+    # return the forward vector for further use as minimum distance
+    return forward
+
+def check_distance(camera, all_objects, min_distance):
+    # Check if the camera is too close to any object
+    for obj in all_objects:
+        bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+        center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
+        distance = (camera.location - center).length
+        
+        if distance < min_distance:
+            return False  # Camera is too close to an object
+        
+    return True  # Camera is at a safe distance from all objects
 
 
 
@@ -446,8 +458,8 @@ def get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_labe
 
 # === RENDER AND SAVE FILES ===
 
-def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_percentage, 
-                  output_folder, pass_index_to_label, iter, save_files, use_ray_cast):
+def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, visible_percentage, 
+                  num_pics, output_folder, pass_index_to_label, iter, save_files, use_ray_cast):
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
 
@@ -455,16 +467,19 @@ def capture_views(obj, camera, scene, depsgraph, selected_objects, visible_perce
     center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
     max_dist = max((corner - center).length for corner in bbox_corners)
 
-    # Get a list of camera positions
-    viewpoints = get_viewpoints(center, max_dist)
-
     print(f"\n-------------------- Taking photos around {obj.name} --------------------\n")
     
     # Iterate through all viewpoints around one object
-    for i, pos in enumerate(viewpoints):
-        # Move camera to position
-        camera.location = pos
-        zoom_on_object(camera, center, bbox_corners, depsgraph)
+    for i in range(num_pics):
+
+        # Get a random viewpoint
+        camera.location = get_viewpoint(center, max_dist)
+        min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
+
+        while check_distance(camera, selected_objects + selected_distractors, min_distance) is False:
+            # If the camera is too close to any object, get a new viewpoint
+            camera.location = get_viewpoint(center, max_dist)
+            min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
 
         print(f"-------------------- View angle {i+1} --------------------")
         
@@ -762,7 +777,7 @@ def main(args):
         output_subfolder = os.path.join(output_folder, f"{iter+1}_{hdri_name}")
         
         # Randomly select objects to render
-        selected_objects, _selected_distractors = get_selected_objects(label_names, 
+        selected_objects, selected_distractors = get_selected_objects(label_names, 
                                                                        args.num_obj, args.num_distractor)
 
         # Add random lighting
@@ -778,8 +793,8 @@ def main(args):
 
         # Capture selected objects
         for obj, _label in selected_objects:
-            capture_views(obj, camera, scene, depsgraph, selected_objects, args.visible_percentage, 
-                          output_subfolder, pass_index_to_label, iter, not args.dont_save, args.use_ray_cast)
+            capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, args.visible_percentage, 
+                          args.num_pics, output_subfolder, pass_index_to_label, iter, not args.dont_save, args.use_ray_cast)
 
         bpy.ops.outliner.orphans_purge()
     # End of iteration loop
