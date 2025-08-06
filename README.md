@@ -2,15 +2,12 @@
 
 Generate synthetic data using 3D assets for object detection tasks.
 
-## Files and packages Needed
+## Files Needed
 
-- bpy 4.0.0 (some functions do not exists in the previous versions)
-- mathutils
-- Python 3.11
 - HDRI files for background
     - Supported format: ['.exr']
 - 3D object in one of the formats:
-    - Supported format: ['.obj', '.ply', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
+    - Supported format: ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
     - Has additional folder structure assumptions (see below)
         - If you run the script ```export_obj.py```, it will automatically generate the correct structure.
 
@@ -56,11 +53,19 @@ Output structure
 
 ## How to Generate Data
 
-- From Jupyter Notebook: Open ```data_generation_and_processing.ipynb```. Change the paths. Change parameters accordingly. Run the first cell. 
-- From Terminal: :)
-- From Blender: Open a Blender file. Go to Scripting section on the top bar. Click on the folder icon that reads "Open Text" and load ```generate_data.py```. Change the absolute paths and parameters, and run the cript. This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
+1. Headless through Blender
+    - ```blender --background --python "generate_data.py" -- <args>```
+    - Requirements: Blender >= 4.0.0
+2. Headless using the standalone ```bpy``` library
+    - ```python "generate_data.py" <args>```
+    - Requirements: bpy >= 4.0.0
+    - Note: Best practice is to use CYCLES as the render engine. Might enter bugs that are not present if running through Blender.
+3. Inside Blender UI
+    - In the scripting section, load ```generate_data.py``` and run. 
+    - Requirements: Blender >= 4.0.0
+    - Note: This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
 
-Note: Using absolute path is safer if we're not agreeing with where Blender is installed.
+Note: Use absolute paths.
 
 ## What the Other Scripts Do
 
@@ -84,5 +89,4 @@ Note: Using absolute path is safer if we're not agreeing with where Blender is i
 
 ## Limitations
 
-- Bounding box is not very accurate if the object is highly occluded.
-- Objects flow in the air.
+- Bounding box is not very accurate if the object is highly occluded and vertices are not high enough.
