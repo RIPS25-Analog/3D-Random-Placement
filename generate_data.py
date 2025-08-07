@@ -13,7 +13,7 @@ import yaml
 
 import time
  
-RANDOM_SEED = 1 # For reproducibility
+RANDOM_SEED = 20 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
@@ -350,21 +350,14 @@ def get_2d_bounding_box(obj, camera, scene, depsgraph):
     # Determine the percentage of visible part v.s. whole part
     vis_percentage = visible_area / area
 
-    return minX, minY, maxX, maxY, minX_visible, minY_visible, maxX_visible, maxY_visible, vis_percentage
+    return minX_visible, minY_visible, maxX_visible, maxY_visible, vis_percentage
 
 def get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage):
     visible_bboxes = dict()
 
     for obj, label in selected_objects:
         # Get bounding box in camera's view
-        mX, mY, MX, MY, minX, minY, maxX, maxY, vis_percentage = get_2d_bounding_box(obj, camera, scene, depsgraph)
-        x_c = (mX + MX) / 2
-        y_c = 1 - (mY + MY) / 2 # flip y-axis
-        w = MX - mX
-        h = MY - mY
-        visible_bboxes.update({
-                (x_c, y_c, w, h) : label
-            })
+        minX, minY, maxX, maxY, vis_percentage = get_2d_bounding_box(obj, camera, scene, depsgraph)
         
         if vis_percentage > visible_percentage:
             # Convert to YOLO format
