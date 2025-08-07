@@ -26,14 +26,16 @@ OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
-ITERATION = 2 # Number of scene/backgrounds to generate
-NUM_PICS = 3 # Number of pictures taken around per object
-LIGHT_ENERGY = 60 # Maximum light intensity for the scene
-RENDER_PERCENTAGE = 0.7 # Downscales the image, original size is 1920 x 1080
+ITERATION = 106 # Number of scene/backgrounds to generate
+ARRANGEMENT = 5 # Number of arrangements per iteration
+NUM_PICS = 20 # Number of pictures taken around per object
+LIGHT_ENERGY = 50 # Maximum light intensity for the scene
 
-VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
+RENDER_PERCENTAGE = 0.7 # Downscales the image, original size is 1920 x 1080
 SAMPLES = 16 # Number of samples per image
 TILE_SIZE = 4096 # Tile size for rendering
+
+VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAVE_FILES = True # Set to true to render the final images (for debugging, we can set it to False)
 
 
@@ -192,6 +194,7 @@ def add_hdri_background(scene, selected_hdri):
     if scene.world is None:
         scene.world = bpy.data.worlds.new("GeneratedWorld")
 
+    # Initial setup
     world = scene.world
     world.use_nodes = True
     nodes = world.node_tree.nodes
@@ -199,36 +202,60 @@ def add_hdri_background(scene, selected_hdri):
 
     # Clear existing nodes
     nodes.clear()
-
-    # Create nodes
-    env_tex = nodes.new(type="ShaderNodeTexEnvironment")
-    env_tex.image = bpy.data.images.load(selected_hdri)
-    env_tex.location = (-800, 0)
-
-    background = nodes.new(type="ShaderNodeBackground")
-    background.location = (-400, 0)
-
-    world_output = nodes.new(type="ShaderNodeOutputWorld")
-    world_output.location = (0, 0)
-
-    # Link nodes
-    links.new(env_tex.outputs["Color"], background.inputs["Color"])
-    links.new(background.outputs["Background"], world_output.inputs["Surface"])
-
-    # Add Texture Coordinate and Mapping nodes
+    
+    # Create Texture Coordinate node
     tex_coord = nodes.new(type="ShaderNodeTexCoord")
-    tex_coord.location = (-1200, 0)
 
-    # Rotate HDRI
+    # Create Mapping node
     mapping = nodes.new(type="ShaderNodeMapping")
-    mapping.location = (-1000, 0)
-    mapping.inputs['Rotation'].default_value[2] = 1.57  # Rotate around Z (in radians)
+    mapping.inputs['Rotation'].default_value[2] = -1  # Rotate around Z (in radians)
 
-    # Link coordinate chain
+    # Create Environment Texture (HDRI)
+    env_tex = nodes.new(type="ShaderNodeTexEnvironment")
+    env_tex.name = "EnvironmentTexture"
+    env_tex.image = bpy.data.images.load(selected_hdri)
+    
+    # Create Background node
+    background = nodes.new(type="ShaderNodeBackground")
+    background.inputs["Strength"].default_value = 1
+    
+    # Create output node
+    world_output = nodes.new(type="ShaderNodeOutputWorld")
+    
+    # Multiply node for brightness adjustment
+    multiply = nodes.new(type="ShaderNodeMixRGB")
+    multiply.name = "HDRIMultiply"
+    multiply.blend_type = 'MULTIPLY'
+    multiply.inputs['Fac'].default_value = 1.0
+    multiply.inputs['Color2'].default_value = (1, 1, 1, 1)
+
+    # Arrange nodes neatly
+    tex_coord.location = (-1200, 0)
+    mapping.location = (-1000, 0)
+    env_tex.location = (-800, 0)
+    multiply.location = (-600, 0)
+    background.location = (-200, 0)
+    world_output.location = (0, 0)
+    
+    # Link nodes
     links.new(tex_coord.outputs["Generated"], mapping.inputs["Vector"])
     links.new(mapping.outputs["Vector"], env_tex.inputs["Vector"])
-
+    links.new(env_tex.outputs["Color"], multiply.inputs["Color1"])
+    links.new(multiply.outputs["Color"], background.inputs["Color"])
+    links.new(background.outputs["Background"], world_output.inputs["Surface"])
+    
     scene.render.film_transparent = False
+
+def update_hdri_settings(scene, hdri_path, brightness):
+    world = scene.world
+    nodes = world.node_tree.nodes
+
+    env_tex = nodes.get("EnvironmentTexture")
+    multiply = nodes.get("HDRIMultiply")
+
+    env_tex.image = bpy.data.images.load(hdri_path)
+
+    multiply.inputs['Color2'].default_value = (brightness, brightness, brightness, 1.0)
 
 
 
@@ -692,8 +719,9 @@ def main(args):
     # Set the output folder
     output_folder, yaml_path = setup_output_folder(args.output_path, not args.dont_save) 
 
-    # Fetch hdri files
+    # Collect hdri files and build the world tree
     hdri_files = glob.glob(args.hdri_path + r"/*.exr")
+    add_hdri_background(scene, hdri_files[0])  # Add the first hdri as a default background
 
     # Stores the initial object transforms so that we can restore them later
     original_transforms = {} 
@@ -705,17 +733,20 @@ def main(args):
         # Pick a background
         selected_hdri = random.choice(hdri_files)
         hdri_files.remove(selected_hdri)  # Remove the selected hdri to avoid repetition
-        add_hdri_background(scene, selected_hdri)
 
         # Make a subfolder for each iteration
         hdri_name = os.path.basename(selected_hdri).split('.')[0]
         output_subfolder = os.path.join(output_folder, f"{iter+1}_{hdri_name}")
 
-        # Iterate through different arrangements of objects
-        arrangement = 5
-        for arngmnt in range(arrangement):
+        # Iterate through different object arrangements of the same scene
+        for arngmnt in range(args.arrangement):
+            
             # Randomly select objects to render
             selected_objects, selected_distractors = get_selected_objects(original_transforms, label_names)
+
+            # Adjust the background exposure
+            brightness = random.uniform(0.1, 1) if random.random() < 0.5 else random.uniform(1, 20)
+            update_hdri_settings(scene, selected_hdri, brightness)
 
             # Add random lighting
             if args.light_energy > 0:
@@ -786,6 +817,11 @@ def parse_args(argv):
         help = "Number of objects visible in the 3D scene.", 
         default = NUM_PICS, 
         type=int)
+    
+    parser.add_argument("--arrangement",
+        help = "Number of arrangements per iteration.", 
+        default = ARRANGEMENT, 
+        type = int)
     
     parser.add_argument("--light_energy", 
         help = "how strong the light is.", 
