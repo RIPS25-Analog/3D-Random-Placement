@@ -13,28 +13,28 @@ import yaml
 
 import time
  
-RANDOM_SEED = 0 # For reproducibility
+RANDOM_SEED = 1 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"/home/data/3d_render/output"
 
-r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 
 OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
-ITERATION = 106 # Number of scene/backgrounds to generate
-NUM_PICS = 20 # Number of pictures taken around per object
+ITERATION = 2 # Number of scene/backgrounds to generate
+NUM_PICS = 3 # Number of pictures taken around per object
 LIGHT_ENERGY = 60 # Maximum light intensity for the scene
-RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
+RENDER_PERCENTAGE = 0.7 # Downscales the image, original size is 1920 x 1080
 
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAMPLES = 16 # Number of samples per image
 TILE_SIZE = 4096 # Tile size for rendering
-SAVE_FILES = True # Set to true if we want to render the final images
+SAVE_FILES = True # Set to true to render the final images (for debugging, we can set it to False)
 
 
 
@@ -74,10 +74,9 @@ def look_at(obj, target):
     obj.rotation_euler = quat.to_euler()
 
 def zoom_on_object(camera, center, bbox_corners, depsgraph):
-    # Point camera at the object
+    # Point camera at the target center
     look_at(camera, center)
 
-    # Get object 3D bounding box
     coords = [coord for corner in bbox_corners for coord in corner]
     
     # Zoom to where the entire object will fit in view
@@ -89,11 +88,11 @@ def zoom_on_object(camera, center, bbox_corners, depsgraph):
     forward = camera.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))
     min_distance = (camera.location - center).length
 
-    # Zoom away from the object 
-    fill_ratio = random.uniform(0.4, 1) 
+    # Randomly zoom in or out
+    fill_ratio = random.uniform(0.3, 1.3)  
     camera.location += forward - forward / fill_ratio
 
-    # return the minimum distance
+    # return the minimum distance for future checks
     return min_distance
 
 def distance_too_close(camera, all_objects, min_distance):
@@ -103,7 +102,7 @@ def distance_too_close(camera, all_objects, min_distance):
         center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
         distance = (camera.location - center).length
         
-        if distance < min_distance * 0.9:
+        if distance < min_distance:
             return True  # Camera is too close to an object
         
     return False  # Camera is at a safe distance from all objects
@@ -235,6 +234,37 @@ def add_hdri_background(scene, selected_hdri):
 
 # === GET BOUNDING BOXES ===
 
+def get_bounding_box_for_all(all_objects):
+    # Initialize min and max coordinates
+    min_coord = mathutils.Vector((float('inf'), float('inf'), float('inf')))
+    max_coord = mathutils.Vector((float('-inf'), float('-inf'), float('-inf')))
+
+    # Loop through all mesh objects
+    for obj, _label in all_objects:
+        for vertex in obj.bound_box:
+            world_vertex = obj.matrix_world @ mathutils.Vector(vertex)
+            min_coord.x = min(min_coord.x, world_vertex.x)
+            min_coord.y = min(min_coord.y, world_vertex.y)
+            min_coord.z = min(min_coord.z, world_vertex.z)
+
+            max_coord.x = max(max_coord.x, world_vertex.x)
+            max_coord.y = max(max_coord.y, world_vertex.y)
+            max_coord.z = max(max_coord.z, world_vertex.z)
+
+    # Calculate the corners of the bounding box
+    all_corners = [
+        mathutils.Vector((min_coord.x, min_coord.y, min_coord.z)),
+        mathutils.Vector((min_coord.x, min_coord.y, max_coord.z)),
+        mathutils.Vector((min_coord.x, max_coord.y, min_coord.z)),
+        mathutils.Vector((min_coord.x, max_coord.y, max_coord.z)),
+        mathutils.Vector((max_coord.x, min_coord.y, min_coord.z)),
+        mathutils.Vector((max_coord.x, min_coord.y, max_coord.z)),
+        mathutils.Vector((max_coord.x, max_coord.y, min_coord.z)),
+        mathutils.Vector((max_coord.x, max_coord.y, max_coord.z)),
+    ]
+
+    return all_corners
+
 def is_obscured(scene, depsgraph, origin, destination):
     # get the direction
     direction = (destination - origin)
@@ -277,7 +307,7 @@ def get_2d_bounding_box(obj, camera, scene, depsgraph):
         if is_in_front:
             vertices_in_cam.append(cam_pos)
             
-            # Get the vertices are actually visible
+            # Get the vertices that are actually visible
             if is_visible and is_in_frustum:
                 vertices_visible_in_cam.append(cam_pos)
             
@@ -320,15 +350,22 @@ def get_2d_bounding_box(obj, camera, scene, depsgraph):
     # Determine the percentage of visible part v.s. whole part
     vis_percentage = visible_area / area
 
-    return minX_visible, minY_visible, maxX_visible, maxY_visible, vis_percentage
+    return minX, minY, maxX, maxY, minX_visible, minY_visible, maxX_visible, maxY_visible, vis_percentage
 
 def get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage):
     visible_bboxes = dict()
 
     for obj, label in selected_objects:
         # Get bounding box in camera's view
-        minX, minY, maxX, maxY, vis_percentage = get_2d_bounding_box(obj, camera, scene, depsgraph)
-
+        mX, mY, MX, MY, minX, minY, maxX, maxY, vis_percentage = get_2d_bounding_box(obj, camera, scene, depsgraph)
+        x_c = (mX + MX) / 2
+        y_c = 1 - (mY + MY) / 2 # flip y-axis
+        w = MX - mX
+        h = MY - mY
+        visible_bboxes.update({
+                (x_c, y_c, w, h) : label
+            })
+        
         if vis_percentage > visible_percentage:
             # Convert to YOLO format
             x_center = (minX + maxX) / 2
@@ -345,134 +382,44 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percent
 
 
 
-# === OCCLUSION DETECTION WITH RAY CAST ===
-
-def bilerp(p00, p10, p11, p01, u, v):
-    """
-    Bilinear interpolation of a quad.
-    Points:
-        p00 = bottom_left
-        p10 = bottom_right
-        p11 = top_right
-        p01 = top_left
-    u: horizontal fraction (0 = left, 1 = right)
-    v: vertical fraction (0 = bottom, 1 = top)
-    """
-    return (
-        (1 - u) * (1 - v) * p00 +
-        u       * (1 - v) * p10 +
-        u       * v       * p11 +
-        (1 - u) * v       * p01
-    )
-
-def get_visible_bbox_using_ray_cast(scene, camera, depsgraph, pass_index_to_label):
-    # Get camera's position and focal length
-    mat_world = camera.matrix_world
-    focal_length = 1 if camera.type == 'ORTHO' else camera.data.display_size
-
-    # Get the corners of camera's visible area
-    cam_corners = [mat_world @ (focal_length * point) for point in camera.data.view_frame(scene=scene)]
-    p11, p10, p00, p01 = cam_corners
-
-    img_width = scene.render.resolution_x 
-    img_height = scene.render.resolution_y
-
-    # Initialize an empty image mask with all zeros
-    image_mask = np.zeros((img_width+1, img_height+1), dtype=np.uint8) 
-
-    visible_obj_index = set()
-    visible_bboxes = dict()
-
-    #  the image mask
-    for i in range(img_width+1):
-        for j in range(img_height+1):
-            u = i / img_width
-            v = j / img_height
-            pos = bilerp(p00, p10, p11, p01, u, v)
-
-            # Use ray cast to determine if any object is visible in a particulat direction
-            direction = (pos - camera.location).normalized()
-            hit_bool, _location, _normal, _index, hit_obj, _matrix = scene.ray_cast(depsgraph, camera.location, direction)
-
-            # We're only interested in objects with predefined indices
-            if hit_bool and hit_obj.pass_index != 0:
-                # Change the index in the image mask if the ray cast hits something
-                image_mask[i, j] = hit_obj.pass_index
-
-                # Store the object as a visible object
-                visible_obj_index.add(hit_obj.pass_index)    
-
-    # For each visible object, find bounding box scaled to [0, 1]
-    for obj_index in visible_obj_index:
-        if obj_index == 0:
-            continue
-
-        minX = minY = 1
-        maxX = maxY = 0
-
-        for i in range(img_width):
-            for j in range(img_height):
-                index = image_mask[i, j]
-                if index == obj_index:
-                    pos = mathutils.Vector((
-                        i / img_width, 
-                        j / img_height
-                    ))
-                    if (pos.x < minX):
-                        minX = pos.x
-                    if (pos.y < minY):
-                        minY = pos.y
-                    if (pos.x > maxX):
-                        maxX = pos.x
-                    if (pos.y > maxY):
-                        maxY = pos.y
-
-        label = pass_index_to_label[obj_index]
-
-        # Convert to YOLO format
-        x_center = (minX + maxX) / 2
-        y_center = 1 - (minY + maxY) / 2 # flip y-axis
-        width = maxX - minX
-        height = maxY - minY
-
-        visible_bboxes.update({
-            (x_center, y_center, width, height) : label
-        })
-
-
-
 # === RENDER AND SAVE FILES ===
 
-def capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, 
-                  visible_percentage, num_pics, output_folder, iter, save_files):
-    # Get bounding box corners in world space
-    bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
-
-    # Get center and size
-    center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
-    max_dist = max((corner - center).length for corner in bbox_corners)
-
-    print(f"\n-------------------- Taking photos around {obj.name} --------------------\n")
+def capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, iter, arngmnt, 
+                  visible_percentage, num_pics, output_folder, save_files):
     
-    # Iterate through all viewpoints around one object
+    # Get the bounding box for all objects (so that the camera can zoom out to fit)
+    all_objects = selected_objects + selected_distractors
+    all_corners = get_bounding_box_for_all(all_objects)
+    
+    # Iterate through the number of pictures to take
     for i in range(num_pics):
+        # Randomly select one object to focus on
+        focus_obj, _label = random.choice(all_objects)
 
-        # Get a random viewpoint
+        # Get bounding box corners in world space
+        bbox_corners = [focus_obj.matrix_world @ mathutils.Vector(corner) for corner in focus_obj.bound_box]
+
+        # Get center and size
+        center = sum(bbox_corners, mathutils.Vector((0, 0, 0))) / 8
+        max_dist = max((corner - center).length for corner in bbox_corners)
+
+        # Get a random viewpoint and distance
         camera.location = get_viewpoint(center, max_dist)
-        min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
+        min_distance = zoom_on_object(camera, center, all_corners, depsgraph)
 
-        while distance_too_close(camera, selected_objects + selected_distractors, min_distance):
+        while distance_too_close(camera, selected_objects + selected_distractors, min_distance * 0.4):
             # If the camera is too close to any object, get a new viewpoint
             camera.location = get_viewpoint(center, max_dist)
-            min_distance = zoom_on_object(camera, center, bbox_corners, depsgraph)
+            min_distance = zoom_on_object(camera, center, all_corners, depsgraph)
 
-        print(f"-------------------- View angle {i+1} --------------------")
+        print(f"-------------------- Arrangment {arngmnt+1}; View angle {i+1} --------------------")
         
         # Get bounding boxes for visible objects
         visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
 
         if save_files:            
-            file_name = f"{iter+1}_{obj.name}_{i+1}"
+            file_name = f"{iter+1}_{arngmnt+1}_{i+1}"
+
             # Save the image
             img_path = os.path.join(output_folder, "images", f"{file_name}.jpg")
             scene.render.image_settings.file_format = 'JPEG'
@@ -542,9 +489,9 @@ def setup_output_folder(output_path, save_files):
 
     return output_folder, yaml_path
 
-def get_selected_objects(label_names):
-    all_objects = [] # (obj, label)
-    all_distractors = [] # (obj, label)
+def get_selected_objects(original_transforms, label_names):
+    objects = [] # (obj, label)
+    distractors = [] # (obj, label)
 
     selected_objects = []
     selected_distractors = []
@@ -555,26 +502,33 @@ def get_selected_objects(label_names):
         for obj in collection.objects:
             if obj.type == 'MESH':
                 obj.hide_render = True
-                all_objects.append((obj, label))
+                objects.append((obj, label))
     
     # Randomly select some of the objects
     num_obj_ran = random.randint(0, 2)
-    selected_objects = random.sample(all_objects, num_obj_ran)
+    selected_objects = random.sample(objects, num_obj_ran)
 
     # Select all distractors from the scene
     if "distractors" in bpy.data.collections:
-        distractors = bpy.data.collections["distractors"]
-        for distractor in distractors.objects:
-            if distractor.type == 'MESH':
-                distractor.hide_render = True
-                all_distractors.append((distractor, "distractors"))
+        collection = bpy.data.collections["distractors"]
+        for distr in collection.objects:
+            if distr.type == 'MESH':
+                distr.hide_render = True
+                distractors.append((distr, "distractors"))
         
         # Total objects is [3, 6]
         num_distractor_ran = random.randint(3, 6) - num_obj_ran
-        selected_distractors = random.sample(all_distractors, num_distractor_ran)
+        selected_distractors = random.sample(distractors, num_distractor_ran)
 
     for obj, _label in selected_objects + selected_distractors:
         obj.hide_render = False
+
+        # Store initial states of the object so that we can restore them later
+        original_transforms[obj.name] = {
+            'location': obj.location.copy(),
+            'rotation': obj.rotation_euler.copy(),
+            'scale': obj.scale.copy()
+        }
 
         # Add augmentation to both target objects and distractors
         rescale_object(obj)
@@ -637,7 +591,6 @@ def add_default_obj(scene):
     return camera_object, light_object
 
 def import_obj(scene, obj_path):
-    
     label_names = []
 
     # Iterate through all category folders
@@ -688,6 +641,10 @@ def import_obj(scene, obj_path):
             # Link the object to the new collection
             new_coll.objects.link(new_obj)
 
+            # Move the object away from the origin to avoid unintentional occlusion
+            translate_object(new_obj, center=mathutils.Vector((100, 100, 100)))  
+            rescale_object(new_obj)  
+
     return label_names  # Return the list of label names for further processing
 
 def render_setup(scene, render_percentage):
@@ -712,7 +669,6 @@ def render_setup(scene, render_percentage):
     scene.cycles.use_progressive_refine = False
     scene.cycles.device = "GPU"
 
-    scene.render.use_persistent_data = False
     scene.render.resolution_percentage = int(render_percentage * 100)
 
 
@@ -746,6 +702,10 @@ def main(args):
     # Fetch hdri files
     hdri_files = glob.glob(args.hdri_path + r"/*.exr")
 
+    # Stores the initial object transforms so that we can restore them later
+    original_transforms = {} 
+
+    # Iterate through the number of background we want to generate
     for iter in range(min(args.iteration, len(hdri_files))):
         print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
 
@@ -757,27 +717,40 @@ def main(args):
         # Make a subfolder for each iteration
         hdri_name = os.path.basename(selected_hdri).split('.')[0]
         output_subfolder = os.path.join(output_folder, f"{iter+1}_{hdri_name}")
-        
-        # Randomly select objects to render
-        selected_objects, selected_distractors = get_selected_objects(label_names)
 
-        # Add random lighting
-        if args.light_energy > 0:
-            translate_object_surface(light, 
-                                    x_range = 60, 
-                                    y_range = 60, 
-                                    z_range = 60)
-            look_at(light, CENTER)     
+        # Iterate through different arrangements of objects
+        arrangement = 5
+        for arngmnt in range(arrangement):
+            # Randomly select objects to render
+            selected_objects, selected_distractors = get_selected_objects(original_transforms, label_names)
 
-        # Update the scene
-        bpy.context.view_layer.update()
+            # Add random lighting
+            if args.light_energy > 0:
+                translate_object_surface(light, 
+                                        x_range = 60, 
+                                        y_range = 60, 
+                                        z_range = 60)
+                look_at(light, CENTER)     
 
-        # Capture selected objects
-        for obj, _label in selected_objects + selected_distractors:
-            capture_views(obj, camera, scene, depsgraph, selected_objects, selected_distractors, 
-                          args.visible_percentage, args.num_pics, output_subfolder, iter, not args.dont_save)
+            # Update the scene
+            bpy.context.view_layer.update()
 
-        bpy.ops.outliner.orphans_purge()
+            # Capture selected objects
+            capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, iter, arngmnt, 
+                          args.visible_percentage, args.num_pics, output_subfolder, not args.dont_save)
+            
+            # Restore previous locations so that the objects won't overlap in the next iteration
+            # to create unintentional occlusion
+            for obj, _label in selected_objects + selected_distractors:
+                t = original_transforms[obj.name]
+                obj.location = t['location']
+                obj.rotation_euler = t['rotation']
+                obj.scale = t['scale']
+
+            # Clean up the storage and update the scene
+            original_transforms.clear()
+            bpy.context.view_layer.update()
+
     # End of iteration loop
 
     print(f"Output folder: {output_folder}")
