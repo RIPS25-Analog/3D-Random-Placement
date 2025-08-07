@@ -10,21 +10,17 @@ import re
 import sys
 import argparse
 import yaml
-
 import time
- 
-RANDOM_SEED = 20 # For reproducibility
 
 HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"/home/data/3d_render/output"
 
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
-
-OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
+RANDOM_SEED = 0 # For reproducibility
 
 ITERATION = 106 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
@@ -37,6 +33,8 @@ TILE_SIZE = 4096 # Tile size for rendering
 
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAVE_FILES = True # Set to true to render the final images (for debugging, we can set it to False)
+
+OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
 
 
