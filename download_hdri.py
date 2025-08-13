@@ -5,7 +5,7 @@ import os
 ids_file = "hdri_ids.txt"  # one asset id per line
 
 # Output folder
-save_folder = "downloads"
+save_folder = "/home/data/3d_render/background_hdri"
 os.makedirs(save_folder, exist_ok=True)
 
 # Function to download a file
