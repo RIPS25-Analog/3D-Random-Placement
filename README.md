@@ -29,27 +29,26 @@ Generate synthetic data using 3D assets for object detection tasks.
 
 Output structure
 ```
-|   output/   
-|   ├── attempt_1_light_on/                 # one attempt = running the script once
-|   |   ├── 1_<background_1>/               # images generated with the same background and scene layout are grouped together
-|   |   |   ├── images/
-|   |   |   |   ├── 1_<obj_1>_1.jpg
-|   |   |   |   ├── 1_<obj_1>_2.jpg
-|   |   |   |   ├── 1_<obj_1>_3.jpg
-|   |   |   |   ├── ...
-|   |   |   |   ├── 1_<obj_2>_1.jpg
-|   |   |   |   ├── 1_<obj_2>_2.jpg
-|   |   |   |   ├── 1_<obj_2>_3.jpg
-|   |   |   |   └── ...
-|   |   |   └── labels/
-|   |   |   |   └── ...
-|   |   ├── 2_<background_2>/
+output/
+├── attempt_1/                          # one attempt: running the whole script once (assume seed=0)
+|   ├── 1_<background_1>/               # images generated with the same background and scene layout are grouped together
+|   |   ├── images/
+|   |   |   ├── 1(0)_1_1_1.jpg
+|   |   |   ├── 1(0)_1_1_2.jpg
+|   |   |   ├── 1(0)_1_1_3.jpg
+|   |   |   ├── ...
+|   |   |   ├── 1(0)_1_2_1.jpg
+|   |   |   ├── 1(0)_1_2_2.jpg
+|   |   |   ├── 1(0)_1_2_3.jpg
 |   |   |   └── ...
+|   |   └── labels/
+|   |   |   └── ...
+|   ├── 2_<background_2>/
 |   |   └── ...
-|   ├── attempt_2_light_off/
-|   |   └── ...
-|   └── ... 
-```
+|   └── ...
+├── attempt_2/
+|   └── ...
+└── ... 
 
 ## How to Generate Data
 
@@ -89,4 +88,4 @@ Note: Use absolute paths.
 
 ## Limitations
 
-- Bounding box is not very accurate if the object is highly occluded and vertices are not high enough.
+- Bounding box might be smaller than the actual visible object if the object is highly occluded and vertices are not high enough.
