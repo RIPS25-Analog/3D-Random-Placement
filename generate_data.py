@@ -22,12 +22,12 @@ OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
 RANDOM_SEED = 0 # For reproducibility
 
-ITERATION = 106 # Number of scene/backgrounds to generate
+ITERATION = 10 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
 NUM_PICS = 20 # Number of pictures taken around per object
 LIGHT_ENERGY = 50 # Maximum light intensity for the scene
 
-RENDER_PERCENTAGE = 0.7 # Downscales the image, original size is 1920 x 1080
+RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
 SAMPLES = 16 # Number of samples per image
 TILE_SIZE = 4096 # Tile size for rendering
 
@@ -402,7 +402,8 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percent
 
 # === RENDER AND SAVE FILES ===
 
-def capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, iter, arngmnt, 
+def capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
+                  atmpt, seed, arngmnt, iter, 
                   visible_percentage, num_pics, output_folder, save_files):
     
     # Get the bounding box for all objects (so that the camera can zoom out to fit)
@@ -436,7 +437,7 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
         visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
 
         if save_files:            
-            file_name = f"{iter+1}_{arngmnt+1}_{i+1}"
+            file_name = f"{atmpt}({seed})_{iter+1}_{arngmnt+1}_{i+1}"
 
             # Save the image
             img_path = os.path.join(output_folder, "images", f"{file_name}.jpg")
@@ -505,7 +506,7 @@ def setup_output_folder(output_path, save_files):
         with open(yaml_path, "w") as f:
             yaml.dump(vars(args), f)
 
-    return output_folder, yaml_path
+    return output_folder, yaml_path, next_attempt
 
 def get_selected_objects(original_transforms, label_names):
     objects = [] # (obj, label)
@@ -687,6 +688,7 @@ def render_setup(scene, render_percentage):
     scene.cycles.use_progressive_refine = False
     scene.cycles.device = "GPU"
 
+    scene.render.use_persistent_data = False
     scene.render.resolution_percentage = int(render_percentage * 100)
 
 
@@ -715,7 +717,7 @@ def main(args):
     light.data.energy = light_energy_ran
 
     # Set the output folder
-    output_folder, yaml_path = setup_output_folder(args.output_path, not args.dont_save) 
+    output_folder, yaml_path, atmpt = setup_output_folder(args.output_path, not args.dont_save) 
 
     # Collect hdri files and build the world tree
     hdri_files = glob.glob(args.hdri_path + r"/*.exr")
@@ -743,7 +745,7 @@ def main(args):
             selected_objects, selected_distractors = get_selected_objects(original_transforms, label_names)
 
             # Adjust the background exposure
-            brightness = random.uniform(0.1, 1) if random.random() < 0.5 else random.uniform(1, 20)
+            brightness = random.uniform(0.5, 1) if random.random() < 0.5 else random.uniform(1, 10)
             update_hdri_settings(scene, selected_hdri, brightness)
 
             # Add random lighting
@@ -758,7 +760,8 @@ def main(args):
             bpy.context.view_layer.update()
 
             # Capture selected objects
-            capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, iter, arngmnt, 
+            capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
+                          atmpt, args.seed, arngmnt, iter, 
                           args.visible_percentage, args.num_pics, output_subfolder, not args.dont_save)
             
             # Restore previous locations so that the objects won't overlap in the next iteration
