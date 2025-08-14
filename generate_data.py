@@ -22,7 +22,7 @@ OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
 RANDOM_SEED = 0 # For reproducibility
 
-ITERATION = 10 # Number of scene/backgrounds to generate
+ITERATION = 1 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
 NUM_PICS = 20 # Number of pictures taken around per object
 LIGHT_ENERGY = 50 # Maximum light intensity for the scene
@@ -757,12 +757,18 @@ def main(args):
             update_hdri_settings(scene, selected_hdri, brightness)
 
             # Add random lighting
-            if args.light_energy > 0:
-                translate_object_on_surface(light, 
-                                        x_range = 60, 
-                                        y_range = 60, 
-                                        z_range = 60)
-                look_at(light, CENTER)     
+            translate_object_on_surface(light, 
+                                    x_range = 6, 
+                                    y_range = 6, 
+                                    z_range = 6)
+            look_at(light, CENTER)
+
+            # Add cube to create shadow effects
+            bpy.ops.mesh.primitive_cube_add(
+                size=2,                # Cube edge length (default is 2)
+                location=light.location,    # X, Y, Z coordinates
+                rotation=(0, 0, 0)     # Rotation in radians
+            )
 
             # Update the scene
             bpy.context.view_layer.update()
@@ -783,6 +789,12 @@ def main(args):
             # Clean up the storage and update the scene
             original_transforms.clear()
             bpy.context.view_layer.update()
+
+            # Remove the dummy cube that was added for shadow effects
+            obj = bpy.data.objects.get("Cube")
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+        # End of arrangement loop
 
     # End of iteration loop
 
