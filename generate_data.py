@@ -1,8 +1,7 @@
-import bpy   
+import bpy
+import mathutils
 import bpycv
 import cv2
-import mathutils 
-import bpy_extras
 import numpy as np
 import random
 
@@ -11,6 +10,7 @@ import glob
 import re
 import sys
 import argparse
+
 import yaml
 import time
 
@@ -22,18 +22,20 @@ HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
 OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
-RANDOM_SEED = 0 # For reproducibility
+RANDOM_SEED = 0 # Set the random seed for reproducibility.
 
 ITERATION = 1 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
 NUM_PICS = 5 # Number of pictures taken around per object
+
 LIGHT_ENERGY = 50 # Maximum light intensity for the scene
+EXPOSURE_LOW = 0.5 # Minimum exposure rate for hdri backgrounds
+EXPOSURE_HIGH = 10 # Maximum exposure rate for hdri backgrounds
 
-RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
-SAMPLES = 16 # Number of samples per image
-TILE_SIZE = 4096 # Tile size for rendering
+RENDER_PERCENTAGE = 0.5 # Downscales the image to __%. Original size is 1920 x 1080
+SAMPLES = 16 # Number of samples per image. The higher the lesser artifacts (Renderer setup)
+TILE_SIZE = 4096 # Tile size for rendering. The higher the faster and more GRU compute (Renderer setup)
 
-VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAVE_FILES = True # Set to true to render the final images (for debugging, we can set it to False)
 
 
@@ -293,122 +295,13 @@ def get_bounding_box_for_all(all_objects):
 
     return all_corners
 
-'''
-def is_obscured(scene, depsgraph, origin, destination):
-    # get the direction
-    direction = (destination - origin)
-    distance = direction.length
-    direction = direction.normalized()
-
-    # Add small offset distance to avoid colliding with itself
-    offset = 0.01  
-    origin = origin + direction * offset
-
-    # cast a ray from origin to destination
-    hit_bool, _location, _normal, _index, _hit_obj, _matrix = scene.ray_cast(depsgraph, origin, direction, distance=distance)
-
-    return hit_bool
-
-def get_2d_bounding_box(obj, camera, scene, depsgraph):
-    # Update view layer to get the most recent coordinates
-    bpy.context.view_layer.update()
-    
-    # Determine the number of vertices to iterate over
-    obj_vertices = obj.data.vertices
-    num_total_vertices = len(obj_vertices)
-    
-    vertices_in_cam = []
-    vertices_visible_in_cam = []
-    
-    for i in range(0, num_total_vertices):
-        # Get the vertex position
-        local_pos = obj_vertices[i].co
-        world_pos = obj.matrix_world @ local_pos
-
-        # maps a 3D point in world space into normalized camera view coordinates
-        cam_pos = bpy_extras.object_utils.world_to_camera_view(scene, camera, world_pos)
-        
-        is_visible = not is_obscured(scene, depsgraph, world_pos, camera.location)
-        is_in_frustum = (0 <= cam_pos.x <= 1) and (0 <= cam_pos.y <= 1)
-        is_in_front = cam_pos.z > 0
-        
-        # Get the vertices that are in front of the camera
-        if is_in_front:
-            vertices_in_cam.append(cam_pos)
-            
-            # Get the vertices that are actually visible
-            if is_visible and is_in_frustum:
-                vertices_visible_in_cam.append(cam_pos)
-            
-    num_visible_vertices = len(vertices_visible_in_cam)
-
-    # If there are not enough visible vertices, return bounding box with no volume
-    if num_visible_vertices * 10 < num_total_vertices:
-        return 0, 0, 0, 0, 0
-    
-    # Initialize min, max for 2D bounding box
-    minX = minY = minX_visible = minY_visible = 1
-    maxX = maxY = maxX_visible = maxY_visible = 0
-    
-    # Iterate through vertices in front of the camera
-    for pos in vertices_in_cam:
-        if (pos.x < minX):
-            minX = pos.x
-        if (pos.y < minY):
-            minY = pos.y
-        if (pos.x > maxX):
-            maxX = pos.x
-        if (pos.y > maxY):
-            maxY = pos.y
-    
-    area = (maxX - minX) * (maxY - minY)
-    
-    # Iterate through actually visible vertices
-    for pos in vertices_visible_in_cam:
-        if (pos.x < minX_visible):
-            minX_visible = pos.x
-        if (pos.y < minY_visible):
-            minY_visible = pos.y
-        if (pos.x > maxX_visible):
-            maxX_visible = pos.x
-        if (pos.y > maxY_visible):
-            maxY_visible = pos.y
-            
-    visible_area = (maxX_visible - minX_visible) * (maxY_visible - minY_visible)
-    
-    # Determine the percentage of visible part v.s. whole part
-    vis_percentage = visible_area / area
-
-    return minX_visible, minY_visible, maxX_visible, maxY_visible, vis_percentage
-
-def get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage):
-    visible_bboxes = dict()
-
-    for obj, label in selected_objects:
-        # Get bounding box in camera's view
-        minX, minY, maxX, maxY, vis_percentage = get_2d_bounding_box(obj, camera, scene, depsgraph)
-        
-        if vis_percentage > visible_percentage:
-            # Convert to YOLO format
-            x_center = (minX + maxX) / 2
-            y_center = 1 - (minY + maxY) / 2 # flip y-axis
-            width = maxX - minX
-            height = maxY - minY
-
-            # Store label {bbox : label}
-            visible_bboxes.update({
-                (x_center, y_center, width, height) : label
-            })
-
-    return visible_bboxes
-'''
 
 
 # === RENDER AND SAVE FILES ===
 
 def capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
                   atmpt, iter, seed, arngmnt, label_names, 
-                  visible_percentage, num_pics, output_folder, save_files):
+                  exposure_low, exposure_high, num_pics, output_folder, save_files):
     
     # Get the bounding box for all objects (so that the camera can zoom out to fit)
     all_objects = selected_objects + selected_distractors
@@ -436,7 +329,10 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
             min_distance = zoom_on_object(camera, center, all_corners, depsgraph)
 
         # Change the exposure of the background
-        brightness = random.uniform(0.5, 1) if random.random() < 0.5 else random.uniform(1, 10)
+        if random.random() < 0.5:
+            brightness = random.uniform(exposure_low, 1)
+        else:
+            brightness = random.uniform(1, exposure_high)
         update_hdri_settings(scene, brightness=brightness)
 
         print(f"-------------------- Attempt {atmpt}; Iteration {iter+1}; Arrangment {arngmnt+1}; View angle {i+1} --------------------")
@@ -508,33 +404,6 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
             print(f"Label saved at: {label_file_path}")
         
         print()
-
-        '''# Get bounding boxes for visible objects
-        visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
-
-        if save_files:            
-            file_name = f"{atmpt}({seed})_{iter+1}_{arngmnt+1}_{i+1}"
-
-            # Save the image
-            img_path = os.path.join(output_folder, "images", f"{file_name}.jpg")
-            scene.render.image_settings.file_format = 'JPEG'
-            scene.render.image_settings.color_mode = 'RGB'
-            scene.render.filepath = img_path
-            bpy.ops.render.render(write_still=True)
-            
-            # Make sure the labels folder exists
-            label_path = os.path.join(output_folder, "labels")
-            os.makedirs(label_path, exist_ok=True)
-
-            # Save the annotation file
-            label_file_path = os.path.join(label_path, f"{file_name}.txt")
-            
-            with open(label_file_path, "w") as f:
-                for bbox, label in visible_bboxes.items():
-                    x_center, y_center, width, height = bbox
-                    f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-
-        print()'''
 
 
 
@@ -846,7 +715,8 @@ def main(args):
             # Capture selected objects
             capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
                           atmpt, iter, args.seed, arngmnt, label_names, 
-                          args.visible_percentage, args.num_pics, output_subfolder, not args.dont_save)
+                          args.exposure_low, args.exposure_high, 
+                          args.num_pics, output_subfolder, not args.dont_save)
             
             # Restore previous locations so that the objects won't overlap in the next iteration
             # to create unintentional occlusion
@@ -899,54 +769,60 @@ def parse_args(argv):
         help = "The directory where images and labels will be created and stored.", 
         default = OUTPUT_PATH)
     
-    parser.add_argument("--iteration",
-        help = "Number of iteration, each with different background and object arrangement.", 
-        default = ITERATION, 
+    parser.add_argument("--seed",
+        help = "Set the random seed for reproducibility.", 
+        default = RANDOM_SEED, 
         type = int)
     
-    parser.add_argument("--num_pics", 
-        help = "Number of objects visible in the 3D scene.", 
-        default = NUM_PICS, 
-        type=int)
+    parser.add_argument("--iteration",
+        help = "Number of scene/backgrounds to generate.", 
+        default = ITERATION, 
+        type = int)
     
     parser.add_argument("--arrangement",
         help = "Number of arrangements per iteration.", 
         default = ARRANGEMENT, 
         type = int)
     
+    parser.add_argument("--num_pics", 
+        help = "Number of pictures taken around per object", 
+        default = NUM_PICS, 
+        type=int)
+
+    
     parser.add_argument("--light_energy", 
-        help = "how strong the light is.", 
+        help = "Maximum light intensity for the scene.", 
         default = LIGHT_ENERGY, 
         type = int)
     
-    parser.add_argument("--visible_percentage",
-        help = "Minimum percentage of visible bounding box to be considered valid.", 
-        default = VISIBLE_PERCENTAGE, 
+    parser.add_argument("--exposure_low", 
+        help = "Minimum exposure rate for hdri backgrounds.", 
+        default = EXPOSURE_LOW, 
         type = float)
     
+    parser.add_argument("--exposure_high", 
+        help = "Maximum exposure rate for hdri backgrounds.", 
+        default = EXPOSURE_HIGH, 
+        type = int)
+    
     parser.add_argument("--render_percentage", 
-        help = "Scale down the rendered image to __%. Original size is 1920 x 1080.", 
+        help = "Downscales the image to __%. Original size is 1920 x 1080.", 
         default = RENDER_PERCENTAGE, 
         type = float)
     
     parser.add_argument("--samples",
-        help = "Number of samples per image.", 
+        help = "Number of samples per image. The higher the lesser artifacts (Renderer setup).", 
         default = SAMPLES, 
         type = int)
     
     parser.add_argument("--tile_size",
-        help = "Tile size for rendering.", 
+        help = "Tile size for rendering. The higher the faster and more GRU compute (Renderer setup).", 
         default = TILE_SIZE, 
         type = int)
     
     parser.add_argument("--dont_save",
         help = "Set to True if we don't want to store the images and labels.", 
         action = "store_true")
-    
-    parser.add_argument("--seed",
-        help = "Set the random seed for reproducibility.", 
-        default = RANDOM_SEED, 
-        type = int)
     
     args = parser.parse_args(argv)
     return args
