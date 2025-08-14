@@ -1,4 +1,6 @@
 import bpy   
+import bpycv
+import cv2
 import mathutils 
 import bpy_extras
 import numpy as np
@@ -16,15 +18,15 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"/home/data/3d_render/output"
 
-r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 RANDOM_SEED = 0 # For reproducibility
 
 ITERATION = 1 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
-NUM_PICS = 20 # Number of pictures taken around per object
+NUM_PICS = 5 # Number of pictures taken around per object
 LIGHT_ENERGY = 50 # Maximum light intensity for the scene
 
 RENDER_PERCENTAGE = 0.5 # Downscales the image, original size is 1920 x 1080
@@ -53,7 +55,7 @@ EPS = 0.05 # Size deviation for randomness
 # === DEFINE CAMERA BEHAVIOR ===
 
 def get_viewpoint(center, max_dist):
-    z = 2 * random.random() - 1  # z ∈ [-1, 1]
+    z = 2 * random.random() - 1  # z is in [-1, 1]
     theta = 2 * np.pi * random.random()
     r_xy = np.sqrt(1 - z * z)
 
@@ -244,14 +246,15 @@ def add_hdri_background(scene, selected_hdri):
     
     scene.render.film_transparent = False
 
-def update_hdri_settings(scene, hdri_path, brightness):
+def update_hdri_settings(scene, hdri_path=None, brightness=1):
     world = scene.world
     nodes = world.node_tree.nodes
 
     env_tex = nodes.get("EnvironmentTexture")
     multiply = nodes.get("HDRIMultiply")
 
-    env_tex.image = bpy.data.images.load(hdri_path)
+    if hdri_path:
+        env_tex.image = bpy.data.images.load(hdri_path)
 
     multiply.inputs['Color2'].default_value = (brightness, brightness, brightness, 1.0)
 
@@ -290,6 +293,7 @@ def get_bounding_box_for_all(all_objects):
 
     return all_corners
 
+'''
 def is_obscured(scene, depsgraph, origin, destination):
     # get the direction
     direction = (destination - origin)
@@ -397,13 +401,13 @@ def get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percent
             })
 
     return visible_bboxes
-
+'''
 
 
 # === RENDER AND SAVE FILES ===
 
 def capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
-                  atmpt, seed, arngmnt, iter, 
+                  atmpt, iter, seed, arngmnt, label_names, 
                   visible_percentage, num_pics, output_folder, save_files):
     
     # Get the bounding box for all objects (so that the camera can zoom out to fit)
@@ -426,14 +430,86 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
         camera.location = get_viewpoint(center, max_dist)
         min_distance = zoom_on_object(camera, center, all_corners, depsgraph)
 
+        # If the camera is too close to any object, get a new viewpoint
         while distance_too_close(camera, selected_objects + selected_distractors, min_distance * 0.4):
-            # If the camera is too close to any object, get a new viewpoint
             camera.location = get_viewpoint(center, max_dist)
             min_distance = zoom_on_object(camera, center, all_corners, depsgraph)
 
-        print(f"-------------------- Arrangment {arngmnt+1}; View angle {i+1} --------------------")
+        # Change the exposure of the background
+        brightness = random.uniform(0.5, 1) if random.random() < 0.5 else random.uniform(1, 10)
+        update_hdri_settings(scene, brightness=brightness)
+
+        print(f"-------------------- Attempt {atmpt}; Iteration {iter+1}; Arrangment {arngmnt+1}; View angle {i+1} --------------------")
         
-        # Get bounding boxes for visible objects
+        # Set up objects isntance id
+        index = 0
+        for obj, label in selected_objects:
+            obj["inst_id"] = (label_names.index(label) + 1) * 1000 + index
+            index += 1
+
+        # render image, instance annoatation and depth
+        result = bpycv.render_data()
+
+        # Get instance map from the result
+        inst_map = result["inst"]
+        h, w = inst_map.shape
+
+        bboxes = dict()
+
+        # Get bounding box annotations
+        for obj, label in selected_objects:
+            inst_id = obj["inst_id"]
+
+            ys, xs = np.where(inst_map == inst_id)
+            minX, maxX = xs.min() / w, xs.max() / w
+            minY, maxY = ys.min() / h, ys.max() / h
+
+            # Convert to YOLO format
+            x_center = (minX + maxX) / 2
+            y_center = (minY + maxY) / 2
+            width = maxX - minX
+            height = maxY - minY
+
+            # Store label {bbox : label}
+            bboxes.update({
+                (x_center, y_center, width, height) : label
+            })
+
+        if save_files:
+            file_name = f"{atmpt}({seed})_{iter+1}_{arngmnt+1}_{i+1}"
+
+            # === SAVE THE IMAGE ===
+
+            # Make sure the image folder exists
+            img_path = os.path.join(output_folder, "images")
+            os.makedirs(img_path, exist_ok=True)
+
+            # Save the image
+            img_file_path = os.path.join(img_path, f"{file_name}.jpg")
+
+            cv2.imwrite(
+                img_file_path, result["image"][..., ::-1]
+            )  # transfer RGB image to opencv's BGR
+            print(f"Image saved at: {img_path}")
+
+            # === SAVE THE LABEL ===
+
+            # Make sure the labels folder exists
+            label_path = os.path.join(output_folder, "labels")
+            os.makedirs(label_path, exist_ok=True)
+
+            # Save the annotation file
+            label_file_path = os.path.join(label_path, f"{file_name}.txt")
+
+            with open(label_file_path, "w") as f:
+                for bbox, label in bboxes.items():
+                    x_center, y_center, width, height = bbox
+                    f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+            print(f"Label saved at: {label_file_path}")
+        
+        print()
+
+        '''# Get bounding boxes for visible objects
         visible_bboxes = get_visible_bbox(scene, camera, depsgraph, selected_objects, visible_percentage)
 
         if save_files:            
@@ -458,7 +534,7 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
                     x_center, y_center, width, height = bbox
                     f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
-        print()
+        print()'''
 
 
 
@@ -703,11 +779,8 @@ def render_setup(scene, render_percentage):
 # === MAIN FUNCTION ===
 
 def main(args):
-    random.seed(args.seed)  # Set the random seed for reproducibility
-
     start_time = time.time()
-
-    print("Main is running")
+    random.seed(args.seed)  # Set the random seed for reproducibility
     scene = bpy.context.scene
 
     clear_stage(scene)
@@ -736,8 +809,6 @@ def main(args):
 
     # Iterate through the number of background we want to generate
     for iter in range(min(args.iteration, len(hdri_files))):
-        print(f"\n======================================== Starting iteration {iter+1} ========================================\n")
-
         # Pick a background
         selected_hdri = random.choice(hdri_files)
         hdri_files.remove(selected_hdri)  # Remove the selected hdri to avoid repetition
@@ -752,9 +823,8 @@ def main(args):
             # Randomly select objects to render
             selected_objects, selected_distractors = get_selected_objects(original_transforms, label_names)
 
-            # Adjust the background exposure
-            brightness = random.uniform(0.5, 1) if random.random() < 0.5 else random.uniform(1, 10)
-            update_hdri_settings(scene, selected_hdri, brightness)
+            # Update the background to the selected one
+            update_hdri_settings(scene, hdri_path=selected_hdri)
 
             # Add random lighting
             translate_object_on_surface(light, 
@@ -775,7 +845,7 @@ def main(args):
 
             # Capture selected objects
             capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
-                          atmpt, args.seed, arngmnt, iter, 
+                          atmpt, iter, args.seed, arngmnt, label_names, 
                           args.visible_percentage, args.num_pics, output_subfolder, not args.dont_save)
             
             # Restore previous locations so that the objects won't overlap in the next iteration
@@ -803,7 +873,7 @@ def main(args):
 
     end_time = time.time()
     execution_time = end_time - start_time
-    print(f"\nTotal execution time: {execution_time:.2f} seconds")
+    print(f"Total execution time: {execution_time:.2f} seconds\n")
 
     with open(yaml_path, "a") as f:
         yaml.dump(f"\n# Total execution time: {execution_time:.2f} seconds", f)

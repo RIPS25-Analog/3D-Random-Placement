@@ -188,19 +188,11 @@ scene.camera.location = mathutils.Vector((1, 1, 1))
 look_at(scene.camera, CENTER)
 
 
-
-# THIS ====
+# Set up objects isntance id
 i = 0
-for obj, label in selected_objects + selected_distractors:
+for obj, label in selected_objects:
     obj["inst_id"] = (label_names.index(label) + 1) * 1000 + i
     i += 1
-# ====
-
-for obj, label in selected_objects + selected_distractors:
-    print(obj.name + ", " + label + ", " + str(obj["inst_id"]))
-
-
-# THIS ====
 
 # render image, instance annoatation and depth in one line code
 result = bpycv.render_data()
@@ -209,7 +201,7 @@ inst_map = result["inst"]
 h, w = inst_map.shape
 bboxes = dict()
 
-for obj, label in selected_objects + selected_distractors:
+for obj, label in selected_objects:
     inst_id = obj["inst_id"]
 
     ys, xs = np.where(inst_map == inst_id)
@@ -236,20 +228,3 @@ with open("demo-rgb.txt", "w") as f:
     for bbox, label in bboxes.items():
         x_center, y_center, width, height = bbox
         f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-
-'''
-# save result
-cv2.imwrite(
-    "demo-rgb.jpg", result["image"][..., ::-1]
-)  # transfer RGB image to opencv's BGR
-
-# save instance map as 16 bit png
-cv2.imwrite("demo-inst.png", np.uint16(result["inst"] * 20))
-# the value of each pixel represents the inst_id of the object
-
-# visualization instance mask, RGB, depth for human
-cv2.imwrite("demo-vis(inst_rgb_depth).jpg", result.vis()[..., ::-1])
-
-print(f"Saving vis image to: 'demo-vis(inst_rgb_depth).jpg'")
-'''
-# ====
