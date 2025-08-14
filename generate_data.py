@@ -652,6 +652,10 @@ def import_obj(scene, obj_path):
                     
                     new_obj = bpy.context.view_layer.objects.active
                     new_obj.name = file_name  # Rename the object to the file name
+
+                    # Set the origin to center
+                    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+
                     break  # Stop after the first valid file
             
             for coll in new_obj.users_collection:

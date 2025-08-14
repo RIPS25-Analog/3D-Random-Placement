@@ -32,7 +32,7 @@ def combine():
                     if label_file.is_file():
                         shutil.copy(label_file, combined_dir / "labels" / label_file.name)
 
-    print("✅ Files combined successfully!")
+    print("Files combined successfully.")
 
 ls = glob.glob(r"/home/data/3d_render/combined_output/labels/*")
 print(len(ls))

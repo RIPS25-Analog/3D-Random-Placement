@@ -4,8 +4,8 @@ import shutil
 import tempfile
 
 
-input_path = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\backups\ply_files"
-output_path = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
+input_path = "/home/data/pace/models"
+output_path = "/home/data/3d_render/objects"
 
 models = {
     "can" : [74, 57, 58],
