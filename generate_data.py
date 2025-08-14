@@ -18,15 +18,15 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"/home/data/3d_render/output"
 
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
 
 RANDOM_SEED = 0 # Set the random seed for reproducibility.
 
-ITERATION = 1 # Number of scene/backgrounds to generate
+ITERATION = 10 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
-NUM_PICS = 5 # Number of pictures taken around per object
+NUM_PICS = 20 # Number of pictures taken around per object
 
 LIGHT_ENERGY = 50 # Maximum light intensity for the scene
 EXPOSURE_LOW = 0.5 # Minimum exposure rate for hdri backgrounds
@@ -335,7 +335,7 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
             brightness = random.uniform(1, exposure_high)
         update_hdri_settings(scene, brightness=brightness)
 
-        print(f"-------------------- Attempt {atmpt}; Iteration {iter+1}; Arrangment {arngmnt+1}; View angle {i+1} --------------------")
+        print(f"\n-------------------- Attempt {atmpt}; Iteration {iter+1}; Arrangment {arngmnt+1}; View angle {i+1} --------------------\n")
         
         # Set up objects isntance id
         index = 0
@@ -386,7 +386,6 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
             cv2.imwrite(
                 img_file_path, result["image"][..., ::-1]
             )  # transfer RGB image to opencv's BGR
-            print(f"Image saved at: {img_path}")
 
             # === SAVE THE LABEL ===
 
@@ -401,8 +400,7 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
                 for bbox, label in bboxes.items():
                     x_center, y_center, width, height = bbox
                     f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-            print(f"Label saved at: {label_file_path}")
-        
+
         print()
 
 
