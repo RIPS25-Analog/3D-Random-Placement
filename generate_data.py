@@ -515,7 +515,7 @@ def get_selected_objects(original_transforms, label_names):
     selected_objects = []
     selected_distractors = []
 
-    # Select all objects from the scene
+    # Select all objects with labels from the scene (excluding distractors)
     for label in label_names:
         collection = bpy.data.collections[label]
         for obj in collection.objects:

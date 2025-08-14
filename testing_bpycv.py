@@ -25,59 +25,6 @@ EPS = 0.05 # Size deviation for randomness
 
 
 
-# === RENDER MASK ===
-
-def setup_mask_compositor(scene):
-    # Enable compositing with nodes
-    scene.use_nodes = True
-    tree = scene.node_tree
-    tree.nodes.clear()
-
-    # Add necessary nodes
-    render_layers = tree.nodes.new(type='CompositorNodeRLayers')    # Render layers
-    composite = tree.nodes.new(type='CompositorNodeComposite')      # Composite
-    id_mask = tree.nodes.new(type='CompositorNodeIDMask')           # ID Mask
-    viewer = tree.nodes.new(type='CompositorNodeViewer')            # Viewer
-
-    # Set Pass Index to match the object
-    id_mask.index = 1
-    
-    # Create Links between nodes
-    tree.links.new(render_layers.outputs['IndexOB'], id_mask.inputs['ID value'])
-    tree.links.new(id_mask.outputs['Alpha'], viewer.inputs['Image'])
-    tree.links.new(id_mask.outputs['Alpha'], composite.inputs['Image'])
-
-    # Temporarily disable compositor tree
-    scene.use_nodes = False
-
-def get_object_mask(selected_objects, scene, output_folder, file_name):
-    # Enable compositing
-    scene.use_nodes = True
-
-    for obj in selected_objects:
-        
-        # Setup the object pass index
-        obj.pass_index = 1
-
-        # Set output path and file format
-        mask_path = os.path.join(output_folder, "images", f"{file_name}_mask.jpg")
-        scene.render.filepath = mask_path
-        scene.render.image_settings.file_format = 'PNG'
-        scene.render.image_settings.color_mode = 'RGB' 
-
-        # Render and save the result
-        bpy.ops.render.render(write_still=True)
-
-        # Reset index
-        obj.pass_index = 0
-
-    # Disable compositor tree
-    scene.use_nodes = False
-
-
-
-
-
 def look_at(obj, target):
     direction = (target - obj.location).normalized()
     quat = direction.to_track_quat('-Z', 'Y') 
@@ -121,8 +68,9 @@ def import_obj(scene, obj_path):
         new_coll = bpy.data.collections.new(category_name)
         scene.collection.children.link(new_coll)
 
-        # DON'T exclude distractors from the categories
-        label_names.add(category_name)
+        # Exclude distractors from the categories
+        if category_name.lower() not in {"distractor", "distractors"}:
+            label_names.add(category_name)
 
         obj_folders = glob.glob(f"{category_folder}/*/")
 
@@ -178,16 +126,17 @@ def get_selected_objects(original_transforms, label_names):
     selected_objects = []
     selected_distractors = []
 
-    # Select all objects from the scene
+    # Select all objects with labels from the scene (excluding distractors)
     for label in label_names:
         collection = bpy.data.collections[label]
         for obj in collection.objects:
             if obj.type == 'MESH':
                 obj.hide_render = True
+                print(obj.name)
                 objects.append((obj, label))
     
     # Randomly select some of the objects
-    num_obj_ran = random.randint(0, 2)
+    num_obj_ran = random.randint(1, 2)
     selected_objects = random.sample(objects, num_obj_ran)
 
     # Select all distractors from the scene
@@ -219,6 +168,10 @@ def get_selected_objects(original_transforms, label_names):
     return selected_objects, selected_distractors
 
 
+# ===============================================
+
+
+
 
 
 
@@ -230,31 +183,73 @@ label_names = import_obj(scene, obj_path)
 # Randomly select objects to render
 selected_objects, selected_distractors = get_selected_objects({}, label_names)
 
-i = 0
-for obj, label in selected_objects + selected_distractors:
-    obj["inst_id"] = label_names.index(label) *1000 + i
-    i += 1
-
+label_names.append("distractors")
 scene.camera.location = mathutils.Vector((1, 1, 1))
 look_at(scene.camera, CENTER)
 
+
+
+# THIS ====
+i = 0
+for obj, label in selected_objects + selected_distractors:
+    obj["inst_id"] = (label_names.index(label) + 1) * 1000 + i
+    i += 1
+# ====
+
+for obj, label in selected_objects + selected_distractors:
+    print(obj.name + ", " + label + ", " + str(obj["inst_id"]))
+
+
+# THIS ====
+
 # render image, instance annoatation and depth in one line code
 result = bpycv.render_data()
-# result["ycb_meta"] is 6d pose GT
+
+inst_map = result["inst"]
+h, w = inst_map.shape
+bboxes = dict()
+
+for obj, label in selected_objects + selected_distractors:
+    inst_id = obj["inst_id"]
+
+    ys, xs = np.where(inst_map == inst_id)
+    minX, maxX = xs.min() / w, xs.max() / w
+    minY, maxY = ys.min() / h, ys.max() / h
+
+    # Convert to YOLO format
+    x_center = (minX + maxX) / 2
+    y_center = (minY + maxY) / 2
+    width = maxX - minX
+    height = maxY - minY
+
+    # Store label {bbox : label}
+    bboxes.update({
+        (x_center, y_center, width, height) : label
+    })
 
 # save result
 cv2.imwrite(
     "demo-rgb.jpg", result["image"][..., ::-1]
 )  # transfer RGB image to opencv's BGR
 
-# save instance map as 16 bit png
-cv2.imwrite("demo-inst.png", np.uint16(result["inst"]))
-# the value of each pixel represents the inst_id of the object
+with open("demo-rgb.txt", "w") as f:
+    for bbox, label in bboxes.items():
+        x_center, y_center, width, height = bbox
+        f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
-# convert depth units from meters to millimeters
-depth_in_mm = result["depth"] * 1000
-cv2.imwrite("demo-depth.png", np.uint16(depth_in_mm))  # save as 16bit png
+'''
+# save result
+cv2.imwrite(
+    "demo-rgb.jpg", result["image"][..., ::-1]
+)  # transfer RGB image to opencv's BGR
+
+# save instance map as 16 bit png
+cv2.imwrite("demo-inst.png", np.uint16(result["inst"] * 20))
+# the value of each pixel represents the inst_id of the object
 
 # visualization instance mask, RGB, depth for human
 cv2.imwrite("demo-vis(inst_rgb_depth).jpg", result.vis()[..., ::-1])
+
 print(f"Saving vis image to: 'demo-vis(inst_rgb_depth).jpg'")
+'''
+# ====
