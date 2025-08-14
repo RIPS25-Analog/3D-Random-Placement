@@ -34,11 +34,11 @@ TILE_SIZE = 4096 # Tile size for rendering
 VISIBLE_PERCENTAGE = 0.2 # Minimum percentage of visible bounding box to be considered valid
 SAVE_FILES = True # Set to true to render the final images (for debugging, we can set it to False)
 
-OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
-
 
 
 # === INTERNAL VARIABLES ===
+
+OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 0.4 # Range for X-axis
@@ -136,7 +136,7 @@ def translate_object(obj, center=CENTER, x_range=X_RANGE, y_range=Y_RANGE, z_ran
     z = random.uniform(center.z - z_range, center.z + z_range)
     obj.location = (x, y, z)
 
-def translate_object_surface(obj, x_range, y_range, z_range, center=CENTER):
+def translate_object_on_surface(obj, x_range, y_range, z_range, center=CENTER):
     # Compute min and max bounds
     x_min, x_max = center.x - x_range, center.x + x_range
     y_min, y_max = center.y - y_range, center.y + y_range
@@ -610,10 +610,11 @@ def add_default_obj(scene):
     return camera_object, light_object
 
 def import_obj(scene, obj_path):
-    label_names = []
-
-    # Iterate through all category folders
+    label_names = set()
+    
     category_folders = glob.glob(f"{obj_path}/*/")
+
+    # Iterate through all category folders under the objects folder
     for category_folder in category_folders:
         category_name = os.path.basename(os.path.dirname(category_folder))
         
@@ -621,18 +622,19 @@ def import_obj(scene, obj_path):
         new_coll = bpy.data.collections.new(category_name)
         scene.collection.children.link(new_coll)
 
-        if category_name != "distractors" and category_name not in label_names:
-            label_names.append(category_name)
+        # Exclude distractors from the categories
+        if category_name.lower() not in {"distractor", "distractors"}:
+            label_names.add(category_name)
 
-        # Iterate through all object folders in the category
         obj_folders = glob.glob(f"{category_folder}/*/")
+
+        # Iterate through all object folders within same category
         for obj_folder in obj_folders:
 
-            # Iterate through all files in the object folder
+            # Iterate through all files in the object folder and try to find the mesh file
             for file_path in glob.glob(f"{obj_folder}/*"):
                 # Get the file extension
                 file_name = os.path.splitext(os.path.basename(file_path))[0]
-
                 obj_ext = os.path.splitext(file_path)[1].lower()
 
                 # Import the object based on its file extension
@@ -650,8 +652,9 @@ def import_obj(scene, obj_path):
                     elif obj_ext in ('.gltf', '.glb'):
                         bpy.ops.import_scene.gltf(filepath=file_path)
                     
+                    # Rename the object to the file name
                     new_obj = bpy.context.view_layer.objects.active
-                    new_obj.name = file_name  # Rename the object to the file name
+                    new_obj.name = file_name  
 
                     # Set the origin to center
                     bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
@@ -668,7 +671,7 @@ def import_obj(scene, obj_path):
             translate_object(new_obj, center=mathutils.Vector((100, 100, 100)))  
             rescale_object(new_obj)  
 
-    return label_names  # Return the list of label names for further processing
+    return list(label_names)  # Return the list of label names for future processing
 
 def render_setup(scene, render_percentage):
     # Renderer setup
@@ -714,6 +717,7 @@ def main(args):
     camera, light = add_default_obj(scene)
     depsgraph = bpy.context.evaluated_depsgraph_get()
     
+    # Import objects
     label_names = import_obj(scene, args.obj_path)
 
     # Setup light energy
@@ -754,7 +758,7 @@ def main(args):
 
             # Add random lighting
             if args.light_energy > 0:
-                translate_object_surface(light, 
+                translate_object_on_surface(light, 
                                         x_range = 60, 
                                         y_range = 60, 
                                         z_range = 60)
