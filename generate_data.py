@@ -32,7 +32,7 @@ LIGHT_ENERGY = 50 # Maximum light intensity for the scene
 EXPOSURE_LOW = 0.5 # Minimum exposure rate for hdri backgrounds
 EXPOSURE_HIGH = 10 # Maximum exposure rate for hdri backgrounds
 
-RENDER_PERCENTAGE = 0.5 # Downscales the image to __%. Original size is 1920 x 1080
+RENDER_PERCENTAGE = 1 # Downscales the image to __%. Original size is 1920 x 1080
 SAMPLES = 16 # Number of samples per image. The higher the lesser artifacts (Renderer setup)
 TILE_SIZE = 4096 # Tile size for rendering. The higher the faster and more GRU compute (Renderer setup)
 
@@ -294,44 +294,6 @@ def get_bounding_box_for_all(all_objects):
     ]
 
     return all_corners
-
-# === MATERIAL SETUP ===
-
-def add_semi_transparent_mat():
-    # Create a new material
-    mat = bpy.data.materials.new(name="LightPassMaterial")
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
-
-    # Remove default nodes
-    for node in nodes:
-        nodes.remove(node)
-    
-    # Add nodes
-    transparent = nodes.new(type="ShaderNodeBsdfTransparent")
-    transparent.inputs[0].default_value = (1, 1, 1, value)
-    
-    principled = nodes.new(type="ShaderNodeBsdfPrincipled")
-    principled.inputs["Alpha"].default_value = 1
-    
-    mix_shader = nodes.new(type="ShaderNodeMixShader")
-    mix_shader.inputs[0].default_value = value
-
-    output = nodes.new(type="ShaderNodeOutputMaterial")
-
-    # Link nodes
-    links.new(transparent.outputs[0], mix_shader.inputs[1])
-    links.new(principled.outputs[0], mix_shader.inputs[2])
-    links.new(mix_shader.outputs[0], output.inputs[0])
-    
-    # Arrange nodes
-    transparent.location = (-400, 50)
-    principled.location = (-500, -50)
-    mix_shader.location = (-200, 0)
-    output.location = (0, 0)
-
-    return mat
 
 
 
@@ -712,25 +674,6 @@ def main(args):
 
     # Stores the initial object transforms so that we can restore them later
     original_transforms = {} 
-
-    mat = add_semi_transparent_mat()
-
-    # Add invisible cubes to cast shadow????
-    for _ in range(10):
-        bpy.ops.mesh.primitive_cube_add() 
-        obj = bpy.context.active_object
-        obj.visible_camera = False
-        rescale_object(obj, target_size=0.05)
-        translate_object(obj)
-        rotate_object(obj)
-        obj.data.materials.append(mat)
-
-        bpy.ops.mesh.primitive_uv_sphere_add()
-        obj = bpy.context.active_object
-        obj.visible_camera = False
-        rescale_object(obj, target_size=0.05)
-        translate_object(obj)
-        obj.data.materials.append(mat)
 
     # Iterate through the number of background we want to generate
     for iter in range(min(args.iteration, len(hdri_files))):
