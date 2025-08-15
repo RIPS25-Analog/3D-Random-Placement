@@ -49,6 +49,7 @@ output/
 ├── attempt_2/
 |   └── ...
 └── ... 
+```
 
 ## How to Generate Data
 
@@ -85,7 +86,3 @@ Note: Use absolute paths.
 |   |   ├── ...
 |   |   └── distractors/
 ```
-
-## Limitations
-
-- Bounding box might be smaller than the actual visible object if the object is highly occluded and vertices are not high enough.

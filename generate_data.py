@@ -18,15 +18,15 @@ HDRI_PATH = r"/home/data/3d_render/background_hdri"
 OBJ_PATH = r"/home/data/3d_render/objects"
 OUTPUT_PATH = r"/home/data/3d_render/output"
 
-r'''HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
+HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
 OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"'''
+OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 RANDOM_SEED = 0 # Set the random seed for reproducibility.
 
-ITERATION = 10 # Number of scene/backgrounds to generate
+ITERATION = 1 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
-NUM_PICS = 20 # Number of pictures taken around per object
+NUM_PICS = 5 # Number of pictures taken around per object
 
 LIGHT_ENERGY = 50 # Maximum light intensity for the scene
 EXPOSURE_LOW = 0.5 # Minimum exposure rate for hdri backgrounds
@@ -235,7 +235,7 @@ def add_hdri_background(scene, selected_hdri):
     tex_coord.location = (-1200, 0)
     mapping.location = (-1000, 0)
     env_tex.location = (-800, 0)
-    multiply.location = (-600, 0)
+    multiply.location = (-500, 0)
     background.location = (-200, 0)
     world_output.location = (0, 0)
     
@@ -294,6 +294,44 @@ def get_bounding_box_for_all(all_objects):
     ]
 
     return all_corners
+
+# === MATERIAL SETUP ===
+
+def add_semi_transparent_mat():
+    # Create a new material
+    mat = bpy.data.materials.new(name="LightPassMaterial")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+
+    # Remove default nodes
+    for node in nodes:
+        nodes.remove(node)
+    
+    # Add nodes
+    transparent = nodes.new(type="ShaderNodeBsdfTransparent")
+    transparent.inputs[0].default_value = (1, 1, 1, value)
+    
+    principled = nodes.new(type="ShaderNodeBsdfPrincipled")
+    principled.inputs["Alpha"].default_value = 1
+    
+    mix_shader = nodes.new(type="ShaderNodeMixShader")
+    mix_shader.inputs[0].default_value = value
+
+    output = nodes.new(type="ShaderNodeOutputMaterial")
+
+    # Link nodes
+    links.new(transparent.outputs[0], mix_shader.inputs[1])
+    links.new(principled.outputs[0], mix_shader.inputs[2])
+    links.new(mix_shader.outputs[0], output.inputs[0])
+    
+    # Arrange nodes
+    transparent.location = (-400, 50)
+    principled.location = (-500, -50)
+    mix_shader.location = (-200, 0)
+    output.location = (0, 0)
+
+    return mat
 
 
 
@@ -357,6 +395,9 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
             inst_id = obj["inst_id"]
 
             ys, xs = np.where(inst_map == inst_id)
+            if xs.size == 0 or ys.size == 0:
+                # No pixels for this object — skip it
+                continue
             minX, maxX = xs.min() / w, xs.max() / w
             minY, maxY = ys.min() / h, ys.max() / h
 
@@ -582,8 +623,6 @@ def import_obj(scene, obj_path):
 
                 # Import the object based on its file extension
                 if obj_ext in OBJ_EXT:
-                    print(f"Importing {file_path}...")
-
                     if obj_ext == '.obj':
                         bpy.ops.wm.obj_import(filepath=file_path)
                     elif obj_ext == '.stl':
@@ -674,6 +713,25 @@ def main(args):
     # Stores the initial object transforms so that we can restore them later
     original_transforms = {} 
 
+    mat = add_semi_transparent_mat()
+
+    # Add invisible cubes to cast shadow????
+    for _ in range(10):
+        bpy.ops.mesh.primitive_cube_add() 
+        obj = bpy.context.active_object
+        obj.visible_camera = False
+        rescale_object(obj, target_size=0.05)
+        translate_object(obj)
+        rotate_object(obj)
+        obj.data.materials.append(mat)
+
+        bpy.ops.mesh.primitive_uv_sphere_add()
+        obj = bpy.context.active_object
+        obj.visible_camera = False
+        rescale_object(obj, target_size=0.05)
+        translate_object(obj)
+        obj.data.materials.append(mat)
+
     # Iterate through the number of background we want to generate
     for iter in range(min(args.iteration, len(hdri_files))):
         # Pick a background
@@ -700,13 +758,6 @@ def main(args):
                                     z_range = 6)
             look_at(light, CENTER)
 
-            # Add cube to create shadow effects
-            bpy.ops.mesh.primitive_cube_add(
-                size=2,                # Cube edge length (default is 2)
-                location=light.location,    # X, Y, Z coordinates
-                rotation=(0, 0, 0)     # Rotation in radians
-            )
-
             # Update the scene
             bpy.context.view_layer.update()
 
@@ -717,7 +768,7 @@ def main(args):
                           args.num_pics, output_subfolder, not args.dont_save)
             
             # Restore previous locations so that the objects won't overlap in the next iteration
-            # to create unintentional occlusion
+            # which might reate unintentional occlusion
             for obj, _label in selected_objects + selected_distractors:
                 t = original_transforms[obj.name]
                 obj.location = t['location']
@@ -727,10 +778,6 @@ def main(args):
             # Clean up the storage and update the scene
             original_transforms.clear()
             bpy.context.view_layer.update()
-
-            # Remove the dummy cube that was added for shadow effects
-            obj = bpy.data.objects.get("Cube")
-            bpy.data.objects.remove(obj, do_unlink=True)
 
         # End of arrangement loop
 
