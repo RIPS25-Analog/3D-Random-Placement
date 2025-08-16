@@ -27,6 +27,9 @@ def export_obj(scene, obj_ext, export_path):
             
             # Select current object
             obj.select_set(True)
+
+            # Set the origin to center
+            bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
             
             # Make subfolder for current object
             file_folder = os.path.join(export_path, f"{coll.name}", f"{obj.name}")
