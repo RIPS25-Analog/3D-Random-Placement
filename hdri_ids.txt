@@ -60,7 +60,6 @@ minedump_flats
 mirrored_hall
 modern_bathroom
 monkstown_castle
-monkstown_castle
 moon_lab
 neon_photostudio
 ouchy_pier

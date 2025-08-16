@@ -24,7 +24,7 @@ OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
 
 RANDOM_SEED = 0 # Set the random seed for reproducibility.
 
-ITERATION = 1 # Number of scene/backgrounds to generate
+ITERATION = 2 # Number of scene/backgrounds to generate
 ARRANGEMENT = 5 # Number of arrangements per iteration
 NUM_PICS = 5 # Number of pictures taken around per object
 
@@ -389,6 +389,7 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
             cv2.imwrite(
                 img_file_path, result["image"][..., ::-1]
             )  # transfer RGB image to opencv's BGR
+            cv2.imwrite(os.path.join(img_path, f"{file_name}_vis.jpg"), result.vis()[..., ::-1])
 
             # === SAVE THE LABEL ===
 
