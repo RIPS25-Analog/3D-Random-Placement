@@ -1,11 +1,22 @@
+import os
 import glob
 import shutil
 from pathlib import Path
 
+from defaults import *
+
+
+output = OUTPUT_PATH
+
+combined_output = os.path.join(
+    os.path.dirname(output), 
+    "combined_" + os.path.basename(output)
+)
+
 def combine():
     # Paths
-    base_dir = Path(r"/home/data/3d_render/output")
-    combined_dir = Path(r"/home/data/3d_render/combined_output")
+    base_dir = Path(output)
+    combined_dir = Path(combined_output)
 
     # Create combined_output/images and combined_output/labels
     (combined_dir / "images").mkdir(parents=True, exist_ok=True)
@@ -34,5 +45,11 @@ def combine():
 
     print("Files combined successfully.")
 
-ls = glob.glob(r"/home/data/3d_render/combined_output/labels/*")
-print(len(ls))
+
+
+combine()
+
+img = glob.glob(os.path.join(combined_output, "images/*"))
+lbl = glob.glob(os.path.join(combined_output, "labels/*"))
+
+print(f"number of images: {len(img)}, number of labels: {len(lbl)}")

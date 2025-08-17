@@ -1,11 +1,15 @@
 import bpy   
 import os
 
+from defaults import *
 
-EXPORT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OBJ_EXT = ".gltf"  # Change to the desired file extension
 
+
+export_path = OBJ_PATH 
+obj_ext = ".gltf"
 scene = bpy.context.scene
+
+
 
 def traverse_tree(t):
     yield t
@@ -44,19 +48,19 @@ def export_obj(scene, obj_ext, export_path):
                     filepath=file_path,
                     export_selected_objects=True, 
                     path_mode='COPY'
-                )
+                )                                           # not tested
             elif obj_ext == '.gltf':
                 bpy.ops.export_scene.gltf(
                     filepath=file_path,
                     use_selection=True,
                     export_format='GLTF_SEPARATE',
-                )
+                )                                           # tested
             elif obj_ext == '.glb':
                 bpy.ops.export_scene.gltf(
                     filepath=file_path,
                     use_selection=True,
                     export_format='GLB',
-                )
+                )                                           # not tested
             else:
                 raise ValueError(f"Unsupported file extension: {obj_ext}")
             
@@ -64,4 +68,5 @@ def export_obj(scene, obj_ext, export_path):
             obj.select_set(False)
     
 
-export_obj(scene, OBJ_EXT, EXPORT_PATH)
+
+export_obj(scene, ".gltf", export_path)

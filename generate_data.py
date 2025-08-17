@@ -14,35 +14,40 @@ import argparse
 import yaml
 import time
 
-HDRI_PATH = r"/home/data/3d_render/background_hdri"
-OBJ_PATH = r"/home/data/3d_render/objects"
-OUTPUT_PATH = r"/home/data/3d_render/output"
-
-HDRI_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\background_hdri"
-OBJ_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\data\objects"
-OUTPUT_PATH = r"C:\Users\xlmq4\Documents\GitHub\3D-Data-Generation\output"
-
-RANDOM_SEED = 0 # Set the random seed for reproducibility.
-
-ITERATION = 2 # Number of scene/backgrounds to generate
-ARRANGEMENT = 5 # Number of arrangements per iteration
-NUM_PICS = 5 # Number of pictures taken around per object
-
-LIGHT_ENERGY = 50 # Maximum light intensity for the scene
-EXPOSURE_LOW = 0.5 # Minimum exposure rate for hdri backgrounds
-EXPOSURE_HIGH = 10 # Maximum exposure rate for hdri backgrounds
-
-RENDER_PERCENTAGE = 1 # Downscales the image to __%. Original size is 1920 x 1080
-SAMPLES = 16 # Number of samples per image. The higher the lesser artifacts (Renderer setup)
-TILE_SIZE = 4096 # Tile size for rendering. The higher the faster and more GRU compute (Renderer setup)
-
-SAVE_FILES = True # Set to true to render the final images (for debugging, we can set it to False)
+from defaults import *
 
 
+
+# === ADJUSTABLE VARIABLES ===
+
+# These paths are originally defined in defaults.py.
+# They are listed here for convenience (so you can change them easily if needed)
+# and for clarity (to make it explicit which variables this script uses).
+# Note: If you run this script inside Blender, it may not have access to defaults.py,
+# so you might still need to define the paths directly here.
+HDRI_PATH = HDRI_PATH
+OBJ_PATH = OBJ_PATH
+OUTPUT_PATH = OUTPUT_PATH
+
+RANDOM_SEED = 0             # Set the random seed for reproducibility.
+
+ITERATION = 1               # Number of scene/backgrounds to generate
+ARRANGEMENT = 5             # Number of arrangements per iteration
+NUM_PICS = 5                # Number of pictures taken around per object
+
+LIGHT_ENERGY = 50           # Maximum light intensity for the scene
+EXPOSURE_LOW = 0.5          # Minimum exposure rate for hdri backgrounds
+EXPOSURE_HIGH = 10          # Maximum exposure rate for hdri backgrounds
+
+RENDER_PERCENTAGE = 0.5     # Downscales the image to __%. Original size is 1920 x 1080
+SAMPLES = 16                # Number of samples per image. The higher the lesser artifacts (Renderer setup)
+TILE_SIZE = 4096            # Tile size for rendering. The higher the faster and more GRU compute (Renderer setup)
+
+SAVE_FILES = True           # Set to true to render the final images (for debugging, we can set it to False)
 
 # === INTERNAL VARIABLES ===
 
-OBJ_EXT = ['.obj', '.stl', '.usd', '.usdc', '.usda', '.fbx', '.gltf', '.glb']
+OBJ_EXT = ['.obj', '.gltf', '.glb', '.stl', '.usd', '.usdc', '.usda', '.fbx']
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 0.4 # Range for X-axis
@@ -587,15 +592,19 @@ def import_obj(scene, obj_path):
                 # Import the object based on its file extension
                 if obj_ext in OBJ_EXT:
                     if obj_ext == '.obj':
-                        bpy.ops.wm.obj_import(filepath=file_path)
+                        bpy.ops.wm.obj_import(filepath=file_path)           # tested
+                    elif obj_ext in ('.gltf', '.glb'):
+                        bpy.ops.import_scene.gltf(filepath=file_path)       # tested
+
+                    # The formats below are supported by Blender,
+                    # but I haven’t tested these import mehods yet
                     elif obj_ext == '.stl':
                         bpy.ops.wm.stl_import(filepath=file_path)
                     elif obj_ext in ('.usd', '.usdc', '.usda'):
                         bpy.ops.wm.usd_import(filepath=file_path)
                     elif obj_ext == '.fbx':
                         bpy.ops.import_scene.fbx(filepath=file_path)
-                    elif obj_ext in ('.gltf', '.glb'):
-                        bpy.ops.import_scene.gltf(filepath=file_path)
+                    
                     
                     # Rename the object to the file name
                     new_obj = bpy.context.view_layer.objects.active
