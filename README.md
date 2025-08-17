@@ -7,21 +7,27 @@ Generate synthetic data using 3D assets for object detection tasks.
 - ```bpy```
     - Version: 4.1.0 (or 4.0.0 depending on the system)
     - ```pip install bpy==4.1.0 --extra-index-url https://download.blender.org/pypi/```
+
 - ```mathutils```
     - Comes with ```bpy```
     - (Optional: ```pip install mathutils```)
+
 - ```bpycv```
     - Version: 1.0.0
     - ```pip install bpycv```
+    
 - ```cv2```
     - Version: 4.11.0.86
     - ```pip install opencv-python```
+
 - ```numpy```
     - Version: 2.2.6
     - ```pip install numpy```
+
 - ```pymeshlab```
     - Version: 2025.7
     - ```pip install pymeshlab```
+
 - ```yaml```
     - Version: 6.0.2
     - ```pip install pyyaml```
@@ -31,22 +37,38 @@ Generate synthetic data using 3D assets for object detection tasks.
 ### HDRI Files
 
 - Download HDRI files from [Poly Haven](https://polyhaven.com/hdris) by running this script: ```download_hdri.py```. 
+
 - Make sure that the text file ```hdri_ids.txt``` exists and contains valid HDRI ids. The id for a HDRI file is the same as the name displayed on the website (e.g. the id for "Moon Lab" is ```moon_lab```).
+
 - This script utilizes Poly Haven's [API](https://redocly.github.io/redoc/?url=https://api.polyhaven.com/api-docs/swagger.json&nocors).
+
 - The default downloading size is ```8k``` and the extension is ```.exr```.
+
+- **Note**: You may manually download files from [Poly Haven](https://polyhaven.com/hdris), and run ```extract_hdri_names.py``` to obtain HDRI ids for future reproduction.
 
 ### 3D Models
 
 1. Convert selected models from the PACE dataset:
+
     - Run this script **on its own**: ```convert_ply_to_obj.py```.
-    - Note: This script is designed specifically for converting ```.ply``` models from the PACE dataset to ```.obj``` using ```pymeshlab```, and is not guaranteed to work under other cases.
-    - Suggested use case: Reproducing our results.
+
+    - **Suggested use case**: Reproducing our results.
+
+    - **Note**: This script is designed specifically for converting ```.ply``` models from the PACE dataset to ```.obj``` using ```pymeshlab```. Its behavior with other datasets or file types is not guaranteed.
 
 2. Export models from Blender:
-    - Run this sciprt **inside Blender**: ```export_obj```.
-    - The default exporting format is ```.gltb```. To export to other formats,
-    - Suggested use case: Importing and editing custom (scanned) models.
-    - Assumes a structural organization of Blender scene collections (see below).
+
+    - Run this sciprt **inside a Blender file**: ```export_mesh_file.py```.
+
+    - The default exporting format is ```.gltb```. To export to other formats, TODO: explain that it also supports obj but may not export mtl and texture...
+
+    - **Suggested use case**: Importing custom (e.g. scanned) models, editing, and saving them.
+
+    - **Note**: Before running this script, ensure that models have been edited and saved in Blender, and is ready to use. 
+    
+        The script also assumes a specific structure for Blender scene collections (see details below).
+
+TODO: insert picture??
 
 ```
 ├── Scene/                            
@@ -93,7 +115,6 @@ Each 3D model is stored in a separate file to prevent companion files (such as m
 
 
 ===== not done yet =====
-i also need to add a default.py to store all the configs and paths
 
 
 
@@ -116,7 +137,12 @@ Tested format: ['.obj', '.gltf', '.glb']
 
 Note: Use absolute paths.
 
-explain GPU out of memory and bash file...
+explain what attempts, iteration, arrangement, view angles are.... and the naming convention for each picture
+mention yaml: documents current configs
+
+explain GPU out of memory and bash file... (might even need to manually change seed numbers)
+
+```run_generate_data.sh```
 
 ### Ouput Structure Visualization
 
@@ -145,5 +171,10 @@ output/
 
 ## Post-processing
 
-- combine files
+- combine files 
+```combine_output.py```
+
+- check bbox
+```check_bounding_box.ipynb```
+
 - change labels (done elsewhere)
