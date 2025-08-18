@@ -4,31 +4,31 @@ Generate synthetic data using 3D assets for object detection tasks.
 
 ## Required Packages
 
-- ```bpy```
+- bpy
     - Version: 4.1.0 (or 4.0.0 depending on the system)
     - ```pip install bpy==4.1.0 --extra-index-url https://download.blender.org/pypi/```
 
-- ```mathutils```
+- mathutils
     - Comes with ```bpy```
     - (Optional: ```pip install mathutils```)
 
-- ```bpycv```
+- bpycv
     - Version: 1.0.0
     - ```pip install bpycv```
     
-- ```cv2```
+- cv2
     - Version: 4.11.0.86
     - ```pip install opencv-python```
 
-- ```numpy```
+- numpy
     - Version: 2.2.6
     - ```pip install numpy```
 
-- ```pymeshlab```
+- pymeshlab
     - Version: 2025.7
     - ```pip install pymeshlab```
 
-- ```yaml```
+- yaml
     - Version: 6.0.2
     - ```pip install pyyaml```
 
@@ -60,7 +60,7 @@ Generate synthetic data using 3D assets for object detection tasks.
 
     - Run this sciprt **inside a Blender file**: ```export_mesh_file.py```.
 
-    - The default exporting format is ```.gltb```. To export to other formats, TODO: explain that it also supports obj but may not export mtl and texture...
+    - The default exporting format is ```.gltb```. Other supported formats include ```.glb``` and ```.obj```. However, these formats have not been properly tested, and may not export everything correctly. For example, the ```.obj``` option might not export the necessary ```.mtl``` file and the texture files.
 
     - **Suggested use case**: Importing custom (e.g. scanned) models, editing, and saving them.
 

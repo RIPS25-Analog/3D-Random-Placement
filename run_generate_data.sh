@@ -1,5 +1,5 @@
 # Run a for loop 30 times to call the generate_data.py script using different seeds
-for i in {8..19}
+for i in {0..9}
 do
     echo "Running iteration $i"
     python3 generate_data.py --seed $i

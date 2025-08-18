@@ -31,9 +31,9 @@ OUTPUT_PATH = OUTPUT_PATH
 
 RANDOM_SEED = 0             # Set the random seed for reproducibility.
 
-ITERATION = 1               # Number of scene/backgrounds to generate
-ARRANGEMENT = 5             # Number of arrangements per iteration
-NUM_PICS = 5                # Number of pictures taken around per object
+ITERATION = 10              # Number of scene/backgrounds to generate
+ARRANGEMENT = 10            # Number of arrangements per iteration
+NUM_PICS = 10               # Number of pictures taken around per object
 
 LIGHT_ENERGY = 50           # Maximum light intensity for the scene
 EXPOSURE_LOW = 0.5          # Minimum exposure rate for hdri backgrounds
@@ -744,7 +744,7 @@ def main(args):
     print(f"Total execution time: {execution_time:.2f} seconds\n")
 
     with open(yaml_path, "a") as f:
-        yaml.dump(f"\n# Total execution time: {execution_time:.2f} seconds", f)
+        f.write(f"\n# Total execution time: {execution_time:.2f} seconds\n")
 
 
 
