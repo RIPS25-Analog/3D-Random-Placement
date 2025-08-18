@@ -1,8 +1,11 @@
 import os
+import sys
 import glob
 import shutil
 from pathlib import Path
 
+# This lets the script locate defaults.py one level up
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from defaults import *
 
 

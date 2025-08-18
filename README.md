@@ -32,6 +32,10 @@ Generate synthetic data using 3D assets for object detection tasks.
     - Version: 6.0.2
     - ```pip install pyyaml```
 
+## Defaults
+
+To avoide redundancy, a ```defualt.py``` file is created to store all shared paths.
+
 ## Data Preparation
 
 ### HDRI Files
@@ -52,6 +56,8 @@ Generate synthetic data using 3D assets for object detection tasks.
 
     - Run this script **on its own**: ```convert_ply_to_obj.py```.
 
+    - The default models are cans, toy cars, and selected distractors. The
+
     - **Suggested use case**: Reproducing our results.
 
     - **Note**: This script is designed specifically for converting ```.ply``` models from the PACE dataset to ```.obj``` using ```pymeshlab```. Its behavior with other datasets or file types is not guaranteed.
@@ -68,24 +74,26 @@ Generate synthetic data using 3D assets for object detection tasks.
     
         The script also assumes a specific structure for Blender scene collections (see details below).
 
-TODO: insert picture??
-
 ```
 ├── Scene/                            
 |   ├── Scene Collection/
 |   |   ├── Collections                 # Default Blender collection
 |   |   ├── <category_1>/               # "can"
-|   |   |   ├── <obj_1>                     # "red_can"
-|   |   |   ├── <obj_2>                     # "white_can"
+|   |   |   ├── <obj_1>                     # "blue_can"
+|   |   |   ├── <obj_2>                     # "orange_can"
 |   |   |   └── ...
 |   |   ├── <category_2>/               # "toy_car"
-|   |   |   ├── <obj_1>                     # "black_car"
+|   |   |   ├── <obj_1>                     # "white_car"
 |   |   |   ├── <obj_2>                     # "yellow_car"
 |   |   |   └── ...
 |   |   ├── <category_3>/               # "snack_box"
 |   |   ├── ...
-|   |   └── distractors/                # objects that will not be labeled
+|   |   └── distractors/                # objects in this collection will not be labeled
 ```
+
+Example scene hierarchy in Blender file.
+
+![img](pics/Blender_scene_hierarchy.png)
 
 ### File Structure Visualization
 
@@ -109,7 +117,7 @@ Each 3D model is stored in a separate file to prevent companion files (such as m
 |   |   └── ...
 |   ├── <category_2>/                       # "toy_car"
 |   ├── ...
-|   └── distractors/                    # distractors will not be parsed with a label
+|   └── distractors/                    # "distractors" will not be parsed as a label
 ```
 
 

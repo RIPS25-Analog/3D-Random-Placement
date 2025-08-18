@@ -1,11 +1,11 @@
 import bpy   
 import os
 
-from defaults import *
 
 
-
-export_path = OBJ_PATH 
+# Assuming this script is running inside Blender, then it will not have access
+# to defaults.py
+export_path = "/home/data/3d_render/objects"
 obj_ext = ".gltf"
 scene = bpy.context.scene
 

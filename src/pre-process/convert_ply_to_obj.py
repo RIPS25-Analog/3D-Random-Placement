@@ -1,8 +1,11 @@
 import pymeshlab
 import os
+import sys
 import shutil
 import tempfile
 
+# This lets the script locate defaults.py one level up
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from defaults import *
 
 
@@ -11,9 +14,10 @@ input_path = PACE_MODELS
 output_path = OBJ_PATH
 
 models = {
-    "can" : [74, 57, 58]
-    #"toy_car" : [456, 458, 461, 470], 
-    #"distractors" : [56, 82, 87, 101, 153, 207, 228, 229, 249, 257, 286, 317, 338, 361, 404, 410, 415, 434, 435, 436, 528, 543, 635, 636]
+    "can" : [74, 57, 58],
+    "toy_car" : [456, 458, 461, 470], 
+    "distractors" : [56, 82, 87, 101, 153, 207, 228, 229, 249, 257, 286, 317, 
+                     338, 361, 404, 410, 415, 434, 435, 436, 528, 543, 635, 636]
 }
 
 
