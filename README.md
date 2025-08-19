@@ -9,7 +9,7 @@ Generate synthetic data using 3D assets for object detection tasks.
     - ```pip install bpy==4.1.0 --extra-index-url https://download.blender.org/pypi/```
 
 - mathutils
-    - Comes with ```bpy```
+    - Version: 3.3.0
     - (Optional: ```pip install mathutils```)
 
 - bpycv
@@ -32,145 +32,83 @@ Generate synthetic data using 3D assets for object detection tasks.
     - Version: 6.0.2
     - ```pip install pyyaml```
 
-## Defaults
 
-To avoide redundancy, a ```defualt.py``` file is created to store all shared paths.
 
 ## Data Preparation
 
 ### HDRI Files
 
-- Download HDRI files from [Poly Haven](https://polyhaven.com/hdris) by running this script: ```download_hdri.py```. 
-
-- Make sure that the text file ```hdri_ids.txt``` exists and contains valid HDRI ids. The id for a HDRI file is the same as the name displayed on the website (e.g. the id for "Moon Lab" is ```moon_lab```).
+- Run the script ```download_hdri.py``` to download HDRI files from [Poly Haven](https://polyhaven.com/hdris).
 
 - This script utilizes Poly Haven's [API](https://redocly.github.io/redoc/?url=https://api.polyhaven.com/api-docs/swagger.json&nocors).
 
 - The default downloading size is ```8k``` and the extension is ```.exr```.
 
-- **Note**: You may manually download files from [Poly Haven](https://polyhaven.com/hdris), and run ```extract_hdri_names.py``` to obtain HDRI ids for future reproduction.
-
 ### 3D Models
 
-1. Convert selected models from the PACE dataset:
+- The script only supports ```.obj``` format, which must be accompanied by ```.mtl``` and ```.png``` or ```.jpg``` files to define the model's material and texture.
 
-    - Run this script **on its own**: ```convert_ply_to_obj.py```.
-
-    - The default models are cans, toy cars, and selected distractors. The
-
-    - **Suggested use case**: Reproducing our results.
-
-    - **Note**: This script is designed specifically for converting ```.ply``` models from the PACE dataset to ```.obj``` using ```pymeshlab```. Its behavior with other datasets or file types is not guaranteed.
-
-2. Export models from Blender:
-
-    - Run this sciprt **inside a Blender file**: ```export_mesh_file.py```.
-
-    - The default exporting format is ```.gltb```. Other supported formats include ```.glb``` and ```.obj```. However, these formats have not been properly tested, and may not export everything correctly. For example, the ```.obj``` option might not export the necessary ```.mtl``` file and the texture files.
-
-    - **Suggested use case**: Importing custom (e.g. scanned) models, editing, and saving them.
-
-    - **Note**: Before running this script, ensure that models have been edited and saved in Blender, and is ready to use. 
-    
-        The script also assumes a specific structure for Blender scene collections (see details below).
-
-```
-├── Scene/                            
-|   ├── Scene Collection/
-|   |   ├── Collections                 # Default Blender collection
-|   |   ├── <category_1>/               # "can"
-|   |   |   ├── <obj_1>                     # "blue_can"
-|   |   |   ├── <obj_2>                     # "orange_can"
-|   |   |   └── ...
-|   |   ├── <category_2>/               # "toy_car"
-|   |   |   ├── <obj_1>                     # "white_car"
-|   |   |   ├── <obj_2>                     # "yellow_car"
-|   |   |   └── ...
-|   |   ├── <category_3>/               # "snack_box"
-|   |   ├── ...
-|   |   └── distractors/                # objects in this collection will not be labeled
-```
-
-Example scene hierarchy in Blender file.
-
-![img](pics/Blender_scene_hierarchy.png)
+- [RealityScan](https://www.realityscan.com/en-US) is a powerful 3D scanning software, available with a [mobile application](https://apps.apple.com/us/app/realityscan-mobile/id1584832280) that is free to use.
 
 ### File Structure Visualization
 
-Each 3D model is stored in a separate file to prevent companion files (such as materials and textures) that share the same name overwrite each other. This is particularly important when exporting from Blender, which automatically assigns default names to these files.
-
 ```                           
-├── background_hdri/                    # Stores HDRI files
-|   ├── <bg_1_8k>.exr                       # "moon_lab_8k"
-|   ├── <bg_2_8k>.exr                       # "illovo_beach_balcony_8k"
+├── background_hdri/                    
+|   ├── bg_1_8k.exr                   # "moon_lab_8k"
+|   ├── bg_2_8k.exr                   # "illovo_beach_balcony_8k"
 |   └── ...
-├── objects/                            # Store 3D object models
-|   ├── <category_1>/                       # "can"
-|   |   ├── <obj_1>/                            # "red_can"
-|   |   |   ├── <obj_1>.obj                         # "red_can" (the mesh file must match the folder name)
-|   |   |   ├── <material>.mtl
-|   |   |   └── <texture>.png
-|   |   ├── <obj_2>/                            # "white_can"
-|   |   |   ├── <obj_2>.obj                         # "white_can"
-|   |   |   ├── <material>.mtl
-|   |   |   └── <texture>.png
+├── objects/                          # Store 3D object models
+|   ├── category_1/                   # "can"
+|   |   ├── obj_1/                    # "red_can"
+|   |   |   ├── obj_1.obj
+|   |   |   ├── material.mtl
+|   |   |   └── texture.png
+|   |   ├── obj_2/                    # "white_can"
+|   |   ├── obj_3/                    # "orange_can"
 |   |   └── ...
-|   ├── <category_2>/                       # "toy_car"
+|   ├── category_2/                   # "toy_car"
 |   ├── ...
-|   └── distractors/                    # "distractors" will not be parsed as a label
+|   └── ...
 ```
 
 
 
-===== not done yet =====
+## Data Generation
 
+- Run the bash file ```run_generate_data.sh``` to generate data batch by batch using the following command:
 
+    - ```bash run_generate_data.sh```
 
-## Synthetic Data Generation
+    - **Explanation:** The Python script ```generate_data.py``` can consume a large amount of memory during rendering, and if the number of generated images is too high, it will likely encounter the "GPU out of memory" issue and the program will terminate. To prevent this, we use a Bash file to run a for loop to execute the script multiple times, each with a different random seed.
 
-Implemented format: ['.obj', '.gltf', '.glb', '.stl', '.usd', '.usdc', '.usda', '.fbx']
-Tested format: ['.obj', '.gltf', '.glb']
+- Variable explanation:
 
-1. Headless through Blender (not recommended)
-    - ```blender --background --python "generate_data.py" -- <args>```
-    - Requirements: Blender >= 4.0.0
-2. Headless using the standalone ```bpy``` library
-    - ```python "generate_data.py" <args>```
-    - Requirements: bpy >= 4.0.0
-    - Note: Best practice is to use CYCLES as the render engine. Might enter bugs that are not present if running through Blender.
-3. Inside Blender UI
-    - In the scripting section, load ```generate_data.py``` and run. 
-    - Requirements: Blender >= 4.0.0
-    - Note: This script will clean the current active scene, so the best practice is to open a new file or create a new scene before running.
+    - ```attempt```: One attempt corresponds to a single execution of the script. The bash file controls the number of attempts.
+    
+    - ```iteration```: Within each attempt, this specifies the number of backgrounds the script will use.
+    
+    - ```arrangement```: For each iteration, the objects will be re-selected and re-arranged this number of times.
+    
+    - ```num-pics```: For each arrangement, the camera captures this many images from different angles.
 
-Note: Use absolute paths.
+    - The total number of images is the product of all the above values. The default value is ```10``` for each.
+    
+- Naming convention for each picture:  
 
-explain what attempts, iteration, arrangement, view angles are.... and the naming convention for each picture
-mention yaml: documents current configs
+    - ```attempt(seed)_iteration_arrangement_num-pics.jpg```
 
-explain GPU out of memory and bash file... (might even need to manually change seed numbers)
+### Ouput Structure
 
-```run_generate_data.sh```
-
-### Ouput Structure Visualization
+Inside each ```attempt_<num>``` folder, the output contain a  ```configs_<num>.yaml```file that stores the configurations for each generation.
 
 ```
 output/
-├── attempt_1/                          # one attempt: running the whole script once (assume seed=0)
-|   ├── 1_<background_1>/               # images generated with the same background and scene layout are grouped together
+├── attempt_1/
+|   ├── 1_background_1/
 |   |   ├── images/
-|   |   |   ├── 1(0)_1_1_1.jpg
-|   |   |   ├── 1(0)_1_1_2.jpg
-|   |   |   ├── 1(0)_1_1_3.jpg
-|   |   |   ├── ...
-|   |   |   ├── 1(0)_1_2_1.jpg
-|   |   |   ├── 1(0)_1_2_2.jpg
-|   |   |   ├── 1(0)_1_2_3.jpg
-|   |   |   └── ...
 |   |   └── labels/
-|   |   |   └── ...
-|   ├── 2_<background_2>/
-|   |   └── ...
+|   ├── 2_background_2/
+|   ├── 3_background_3/
 |   └── ...
 ├── attempt_2/
 |   └── ...
@@ -179,10 +117,7 @@ output/
 
 ## Post-processing
 
-- combine files 
-```combine_output.py```
+- After the generation cycle, run the Python script ```combine_output.py``` to combine everything in the output into one folder:
+    - ```python combine_output.py```
 
-- check bbox
-```check_bounding_box.ipynb```
-
-- change labels (done elsewhere)
+- The label for all objects in each image is stored as text strings that match the names of the category folders.

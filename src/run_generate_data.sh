@@ -1,4 +1,4 @@
-# Run a for loop 30 times to call the generate_data.py script using different seeds
+# Run a for loop 10 times to call the generate_data.py script using different seeds
 for i in {0..9}
 do
     echo "Running iteration $i"

@@ -20,11 +20,6 @@ from defaults import *
 
 # === ADJUSTABLE VARIABLES ===
 
-# These paths are originally defined in defaults.py.
-# They are listed here for convenience (so you can change them easily if needed)
-# and for clarity (to make it explicit which variables this script uses).
-# Note: If you run this script inside Blender, it may not have access to defaults.py,
-# so you might still need to define the paths directly here.
 HDRI_PATH = HDRI_PATH
 OBJ_PATH = OBJ_PATH
 OUTPUT_PATH = OUTPUT_PATH
@@ -35,26 +30,34 @@ ITERATION = 10              # Number of scene/backgrounds to generate
 ARRANGEMENT = 10            # Number of arrangements per iteration
 NUM_PICS = 10               # Number of pictures taken around per object
 
-LIGHT_ENERGY = 50           # Maximum light intensity for the scene
+# === INTERNAL VARIABLES ===
+
+TARGET_CLASSES = ["can", "toy_car"]
+ALL_CLASSES = [] # will be updated in the script
+
+MIN_TARGET_OBJ = 0
+MAX_TARGET_OBJ = 2
+MIN_TOTAL_OBJ = 3
+MAX_TOTAL_OBJ = 6
+
+MAX_LIGHT_ENERGY = 50           # Maximum light intensity for the scene
 EXPOSURE_LOW = 0.5          # Minimum exposure rate for hdri backgrounds
 EXPOSURE_HIGH = 10          # Maximum exposure rate for hdri backgrounds
 
-RENDER_PERCENTAGE = 0.5     # Downscales the image to __%. Original size is 1920 x 1080
+RESOLUTION_X = 1920 // 2
+RESOLUTION_Y = 1080 // 2
+
 SAMPLES = 16                # Number of samples per image. The higher the lesser artifacts (Renderer setup)
 TILE_SIZE = 4096            # Tile size for rendering. The higher the faster and more GRU compute (Renderer setup)
 
-SAVE_FILES = True           # Set to true to render the final images (for debugging, we can set it to False)
-
-# === INTERNAL VARIABLES ===
-
-OBJ_EXT = ['.obj', '.gltf', '.glb', '.stl', '.usd', '.usdc', '.usda', '.fbx']
+SAVE_FILES = True
 
 CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
 X_RANGE = 0.4 # Range for X-axis
 Y_RANGE = 0.4 # Range for Y-axis
 Z_RANGE = 0.2 # Range for Z-axis
 
-TARGET_SIZE = 0.2 # Target size for objects after scaling
+RESCALE_SIZE = 0.2 # Mean size for objects after scaling
 EPS = 0.05 # Size deviation for randomness
 
 
@@ -120,7 +123,7 @@ def distance_too_close(camera, all_objects, min_distance):
 
 # === OBJECTS AUGMENTATION ===
 
-def rescale_object(obj, target_size=TARGET_SIZE, eps=EPS, apply=True): 
+def rescale_object(obj, target_size=RESCALE_SIZE, eps=EPS, apply=True): 
     # Get bounding box corners in world space
     bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
     
@@ -304,12 +307,12 @@ def get_bounding_box_for_all(all_objects):
 
 # === RENDER AND SAVE FILES ===
 
-def capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
-                  atmpt, iter, seed, arngmnt, label_names, 
-                  exposure_low, exposure_high, num_pics, output_folder, save_files):
+def capture_views(camera, scene, depsgraph, selected_targets, selected_distractors, 
+                  atmpt, iter, seed, arngmnt, all_classes, num_pics, 
+                  exposure_low, exposure_high, output_folder, save_files):
     
     # Get the bounding box for all objects (so that the camera can zoom out to fit)
-    all_objects = selected_objects + selected_distractors
+    all_objects = selected_targets + selected_distractors
     all_corners = get_bounding_box_for_all(all_objects)
     
     # Iterate through the number of pictures to take
@@ -329,7 +332,7 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
         min_distance = zoom_on_object(camera, center, all_corners, depsgraph)
 
         # If the camera is too close to any object, get a new viewpoint
-        while distance_too_close(camera, selected_objects + selected_distractors, min_distance * 0.4):
+        while distance_too_close(camera, selected_targets + selected_distractors, min_distance * 0.4):
             camera.location = get_viewpoint(center, max_dist)
             min_distance = zoom_on_object(camera, center, all_corners, depsgraph)
 
@@ -344,8 +347,8 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
         
         # Set up objects isntance id
         index = 0
-        for obj, label in selected_objects:
-            obj["inst_id"] = (label_names.index(label) + 1) * 1000 + index
+        for obj, label in selected_targets:
+            obj["inst_id"] = (all_classes.index(label) + 1) * 1000 + index
             index += 1
 
         # render image, instance annoatation and depth
@@ -358,7 +361,7 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
         bboxes = dict()
 
         # Get bounding box annotations
-        for obj, label in selected_objects:
+        for obj, label in selected_targets:
             inst_id = obj["inst_id"]
 
             ys, xs = np.where(inst_map == inst_id)
@@ -394,7 +397,6 @@ def capture_views(camera, scene, depsgraph, selected_objects, selected_distracto
             cv2.imwrite(
                 img_file_path, result["image"][..., ::-1]
             )  # transfer RGB image to opencv's BGR
-            cv2.imwrite(os.path.join(img_path, f"{file_name}_vis.jpg"), result.vis()[..., ::-1])
 
             # === SAVE THE LABEL ===
 
@@ -454,59 +456,62 @@ def setup_output_folder(output_path, save_files):
         # Create the output folder
         os.makedirs(output_folder, exist_ok=True)
 
-        yaml_path = os.path.join(output_folder, f"args_{next_attempt}.yaml")
+        yaml_path = os.path.join(output_folder, f"configs_{next_attempt}.yaml")
+
+        basic_types = (int, float, str, bool, list, tuple, dict)
+        current_module = sys.modules[__name__]
+        all_vars = {k: v for k, v in vars(current_module).items() if not k.startswith("__") and isinstance(v, basic_types)}
+
         with open(yaml_path, "w") as f:
-            yaml.dump(vars(args), f)
+            yaml.dump(all_vars, f, sort_keys=False)
 
     return output_folder, yaml_path, next_attempt
 
-def get_selected_objects(original_transforms, label_names):
-    objects = [] # (obj, label)
-    distractors = [] # (obj, label)
+def get_selected_objects():
+    target_objects = [] # (obj, label)
+    distractor_objects = [] # (obj, label)
 
-    selected_objects = []
-    selected_distractors = []
-
-    # Select all objects with labels from the scene (excluding distractors)
-    for label in label_names:
+    # Get all objects with labels from the scene (excluding distractors)
+    for label in TARGET_CLASSES:
+        # Get the collection of each label
         collection = bpy.data.collections[label]
+
+        # Add the object to target list and hide from renderer
         for obj in collection.objects:
             if obj.type == 'MESH':
                 obj.hide_render = True
-                objects.append((obj, label))
-    
-    # Randomly select some of the objects
-    num_obj_ran = random.randint(0, 2)
-    selected_objects = random.sample(objects, num_obj_ran)
+                target_objects.append((obj, label))
 
-    # Select all distractors from the scene
-    if "distractors" in bpy.data.collections:
-        collection = bpy.data.collections["distractors"]
-        for distr in collection.objects:
-            if distr.type == 'MESH':
-                distr.hide_render = True
-                distractors.append((distr, "distractors"))
+    # Randomly select some of the target objects
+    ran_num_target = random.randint(MIN_TARGET_OBJ, MAX_TARGET_OBJ)
+    selected_targets = random.sample(target_objects, ran_num_target)
+
+    # Get all other objects from the scene (act as distractors)
+    for label in ALL_CLASSES:
+        # Exclude target classes to avoid repetition
+        if label not in TARGET_CLASSES:
+            collection = bpy.data.collections[label]
+
+            # Add the object to other list and hide from renderer
+            for distr in collection.objects:
+                if distr.type == 'MESH':
+                    distr.hide_render = True
+                    distractor_objects.append((distr, label))
         
-        # Total objects is [3, 6]
-        num_distractor_ran = random.randint(3, 6) - num_obj_ran
-        selected_distractors = random.sample(distractors, num_distractor_ran)
+    # Randomly determine a total object number select other objects to reach that number
+    ran_num_distractors = random.randint(MIN_TOTAL_OBJ, MAX_TOTAL_OBJ) - ran_num_target
+    selected_distractors = random.sample(distractor_objects, ran_num_distractors)
 
-    for obj, _label in selected_objects + selected_distractors:
+    # Let selected objects to be see in the renderer
+    for obj, _label in selected_targets + selected_distractors:
         obj.hide_render = False
-
-        # Store initial states of the object so that we can restore them later
-        original_transforms[obj.name] = {
-            'location': obj.location.copy(),
-            'rotation': obj.rotation_euler.copy(),
-            'scale': obj.scale.copy()
-        }
 
         # Add augmentation to both target objects and distractors
         rescale_object(obj)
         translate_object(obj)
         rotate_object(obj)
 
-    return selected_objects, selected_distractors
+    return selected_targets, selected_distractors
 
 
 
@@ -562,58 +567,44 @@ def add_default_obj(scene):
     return camera_object, light_object
 
 def import_obj(scene, obj_path):
-    label_names = set()
+    all_classes = set()
     
+    # Get all category folders (available classes for label)
     category_folders = glob.glob(f"{obj_path}/*/")
 
-    # Iterate through all category folders under the objects folder
+    # Iterate through all the category folders under the objects folder
     for category_folder in category_folders:
         category_name = os.path.basename(os.path.dirname(category_folder))
         
-        # Create new collection
+        # Create new collection for each category
         new_coll = bpy.data.collections.new(category_name)
         scene.collection.children.link(new_coll)
 
-        # Exclude distractors from the categories
-        if category_name.lower() not in {"distractor", "distractors"}:
-            label_names.add(category_name)
+        all_classes.add(category_name)
 
+        # Gett all object folders (instances of the same category)
         obj_folders = glob.glob(f"{category_folder}/*/")
 
-        # Iterate through all object folders within same category
+        # Iterate through all the object folders within the same category
         for obj_folder in obj_folders:
 
-            # Iterate through all files in the object folder and try to find the mesh file
+            # Iterate through all files in the object folder and try to find the .obj file
             for file_path in glob.glob(f"{obj_folder}/*"):
                 # Get the file extension
-                file_name = os.path.splitext(os.path.basename(file_path))[0]
                 obj_ext = os.path.splitext(file_path)[1].lower()
 
-                # Import the object based on its file extension
-                if obj_ext in OBJ_EXT:
-                    if obj_ext == '.obj':
-                        bpy.ops.wm.obj_import(filepath=file_path)           # tested
-                    elif obj_ext in ('.gltf', '.glb'):
-                        bpy.ops.import_scene.gltf(filepath=file_path)       # tested
-
-                    # The formats below are supported by Blender,
-                    # but I haven’t tested these import mehods yet
-                    elif obj_ext == '.stl':
-                        bpy.ops.wm.stl_import(filepath=file_path)
-                    elif obj_ext in ('.usd', '.usdc', '.usda'):
-                        bpy.ops.wm.usd_import(filepath=file_path)
-                    elif obj_ext == '.fbx':
-                        bpy.ops.import_scene.fbx(filepath=file_path)
+                if obj_ext == ".obj":
+                    # Import the object 
+                    bpy.ops.wm.obj_import(filepath=file_path)
                     
-                    
-                    # Rename the object to the file name
+                    # Rename the object to the folder name (optional)
                     new_obj = bpy.context.view_layer.objects.active
-                    new_obj.name = file_name  
+                    new_obj.name = obj_folder  
 
                     # Set the origin to center
                     bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
 
-                    break  # Stop after the first valid file
+                    break  # Stop after finding the .obj file
             
             for coll in new_obj.users_collection:
                 coll.objects.unlink(new_obj)
@@ -625,9 +616,10 @@ def import_obj(scene, obj_path):
             translate_object(new_obj, center=mathutils.Vector((100, 100, 100)))  
             rescale_object(new_obj)  
 
-    return list(label_names)  # Return the list of label names for future processing
+    global ALL_CLASSES
+    ALL_CLASSES = list(all_classes)
 
-def render_setup(scene, render_percentage):
+def render_setup(scene):
     # Renderer setup
     scene.render.engine = 'CYCLES'
     #scene.render.engine = 'BLENDER_EEVEE'
@@ -641,16 +633,17 @@ def render_setup(scene, render_percentage):
     for device in prefs.devices:
         device.use = True
     
-    scene.cycles.samples = args.samples
-    scene.cycles.tile_size = args.tile_size
+    scene.cycles.samples = SAMPLES
+    scene.cycles.tile_size = TILE_SIZE
 
     scene.cycles.use_adaptive_sampling = True
     scene.cycles.use_denoising = True
     scene.cycles.use_progressive_refine = False
     scene.cycles.device = "GPU"
 
-    scene.render.use_persistent_data = False
-    scene.render.resolution_percentage = int(render_percentage * 100)
+    scene.render.use_persistent_data = False # Set to True for faster render but more GPU usage
+    scene.render.resolution_x = RESOLUTION_X
+    scene.render.resolution_y = RESOLUTION_Y
 
 
 
@@ -662,28 +655,25 @@ def main(args):
     scene = bpy.context.scene
 
     clear_stage(scene)
-    render_setup(scene, args.render_percentage)
+    render_setup(scene)
+    
+    # Import objects
+    import_obj(scene, args.obj_path)
+
+    # Collect hdri files and build the world tree
+    hdri_files = glob.glob(os.path.join(args.hdri_path, "*.exr"))
+    add_hdri_background(scene, hdri_files[0])  # Add the first hdri as a default background
 
     # Add default camera and light
     camera, light = add_default_obj(scene)
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    
-    # Import objects
-    label_names = import_obj(scene, args.obj_path)
 
     # Setup light energy
-    light_energy_ran = random.randint(0, args.light_energy)
+    light_energy_ran = random.randint(0, MAX_LIGHT_ENERGY)
     light.data.energy = light_energy_ran
 
     # Set the output folder
-    output_folder, yaml_path, atmpt = setup_output_folder(args.output_path, not args.dont_save) 
-
-    # Collect hdri files and build the world tree
-    hdri_files = glob.glob(args.hdri_path + r"/*.exr")
-    add_hdri_background(scene, hdri_files[0])  # Add the first hdri as a default background
-
-    # Stores the initial object transforms so that we can restore them later
-    original_transforms = {} 
+    output_folder, yaml_path, atmpt = setup_output_folder(args.output_path, SAVE_FILES) 
 
     # Iterate through the number of background we want to generate
     for iter in range(min(args.iteration, len(hdri_files))):
@@ -698,8 +688,8 @@ def main(args):
         # Iterate through different object arrangements of the same scene
         for arngmnt in range(args.arrangement):
             
-            # Randomly select objects to render
-            selected_objects, selected_distractors = get_selected_objects(original_transforms, label_names)
+            # Randomly select target and distractor objects to render
+            selected_targets, selected_distractors = get_selected_objects()
 
             # Update the background to the selected one
             update_hdri_settings(scene, hdri_path=selected_hdri)
@@ -715,21 +705,15 @@ def main(args):
             bpy.context.view_layer.update()
 
             # Capture selected objects
-            capture_views(camera, scene, depsgraph, selected_objects, selected_distractors, 
-                          atmpt, iter, args.seed, arngmnt, label_names, 
-                          args.exposure_low, args.exposure_high, 
-                          args.num_pics, output_subfolder, not args.dont_save)
+            capture_views(camera, scene, depsgraph, selected_targets, selected_distractors, 
+                          atmpt, iter, args.seed, arngmnt, ALL_CLASSES, args.num_pics, 
+                          EXPOSURE_LOW, EXPOSURE_HIGH, output_subfolder, SAVE_FILES)
             
-            # Restore previous locations so that the objects won't overlap in the next iteration
-            # which might reate unintentional occlusion
-            for obj, _label in selected_objects + selected_distractors:
-                t = original_transforms[obj.name]
-                obj.location = t['location']
-                obj.rotation_euler = t['rotation']
-                obj.scale = t['scale']
+            # Move the objects away from the origin to avoid unintentional occlusion
+            for obj, _label in selected_targets + selected_distractors:
+                translate_object(obj, center=mathutils.Vector((100, 100, 100)))  
 
             # Clean up the storage and update the scene
-            original_transforms.clear()
             bpy.context.view_layer.update()
 
         # End of arrangement loop
@@ -786,41 +770,6 @@ def parse_args(argv):
         help = "Number of pictures taken around per object", 
         default = NUM_PICS, 
         type=int)
-
-    
-    parser.add_argument("--light_energy", 
-        help = "Maximum light intensity for the scene.", 
-        default = LIGHT_ENERGY, 
-        type = int)
-    
-    parser.add_argument("--exposure_low", 
-        help = "Minimum exposure rate for hdri backgrounds.", 
-        default = EXPOSURE_LOW, 
-        type = float)
-    
-    parser.add_argument("--exposure_high", 
-        help = "Maximum exposure rate for hdri backgrounds.", 
-        default = EXPOSURE_HIGH, 
-        type = int)
-    
-    parser.add_argument("--render_percentage", 
-        help = "Downscales the image to __%. Original size is 1920 x 1080.", 
-        default = RENDER_PERCENTAGE, 
-        type = float)
-    
-    parser.add_argument("--samples",
-        help = "Number of samples per image. The higher the lesser artifacts (Renderer setup).", 
-        default = SAMPLES, 
-        type = int)
-    
-    parser.add_argument("--tile_size",
-        help = "Tile size for rendering. The higher the faster and more GRU compute (Renderer setup).", 
-        default = TILE_SIZE, 
-        type = int)
-    
-    parser.add_argument("--dont_save",
-        help = "Set to True if we don't want to store the images and labels.", 
-        action = "store_true")
     
     args = parser.parse_args(argv)
     return args
@@ -831,14 +780,13 @@ def handle_argv():
     if "--" in argv:
         # Running from CLI using Blender with arguments after "--"
         argv = argv[argv.index("--") + 1:]
-    elif os.path.basename(__file__) in argv[0] and len(argv) > 1:
-        # Running from CLI with the scripts alone (using bpy library)
+    elif os.path.basename(__file__) in argv[0]:
+        # Running from CLI with the scripts alone using the standalone bpy library
         argv = argv[1:] # remove the script name from the arguments
         pass  
     else:
+        # e.g. running from Blender GUI
         argv = [] # don't parse anything and use default values
-        if not SAVE_FILES:
-            argv.append("--dont_save")
 
     print(f"Arguments: {argv}")
     return argv
