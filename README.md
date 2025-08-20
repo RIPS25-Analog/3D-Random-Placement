@@ -46,18 +46,27 @@ Generate synthetic data using 3D assets for object detection tasks.
 
 ### 3D Models
 
-- The script only supports ```.obj``` format, which must be accompanied by ```.mtl``` and ```.png``` or ```.jpg``` files to define the model's material and texture.
+- The ```generate_data.py``` script only supports ```.obj``` format, which must be accompanied by ```.mtl``` and ```.png``` or ```.jpg``` files to define the model's material and texture.
 
-- [RealityScan](https://www.realityscan.com/en-US) is a powerful 3D scanning software, available with a [mobile application](https://apps.apple.com/us/app/realityscan-mobile/id1584832280) that is free to use.
+1. Convert selected models from the PACE dataset:
+
+    - Run the script ```convert_ply_to_obj.py```.
+
+    - **Note**: This script is designed specifically for converting ```.ply``` models from the PACE dataset to ```.obj``` using ```pymeshlab```. Its behavior with other datasets or file types is not guaranteed.
+
+2. Obtain 3D model using photogrammetry technology:
+
+    - [RealityScan](https://www.realityscan.com/en-US) is a powerful 3D scanning software, available with a [mobile application](https://apps.apple.com/us/app/realityscan-mobile/id1584832280) that is free to use.
 
 ### File Structure Visualization
 
 ```                           
-├── background_hdri/                    
+├── backgrounds/HDRI/                    
 |   ├── bg_1_8k.exr                     # "moon_lab_8k"
 |   ├── bg_2_8k.exr                     # "illovo_beach_balcony_8k"
 |   └── ...
-├── objects/                            # Store 3D object models
+|
+├── 3d_models/
 |   ├── category_1/                     # "can"
 |   |   ├── obj_1/                      # "red_can"
 |   |   |   ├── obj_1.obj

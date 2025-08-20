@@ -4,15 +4,15 @@ import sys
 import shutil
 import tempfile
 
-input_path = "/home/data/pace/models"
-output_path = "/home/data/raw/[dataset_name]/3d_models"
+input_path = "/home/data/pace/models" # example
+output_path = "/home/data/raw/[dataset_name]/3d_models" # example
 
 models = {
     "can" : [74, 57, 58],
     "toy_car" : [456, 458, 461, 470], 
     "distractors" : [56, 82, 87, 101, 153, 207, 228, 229, 249, 257, 286, 317, 
                      338, 361, 404, 410, 415, 434, 435, 436, 528, 543, 635, 636]
-}
+} # example
 
 def rewrite_ply(input_ply):
     with open(input_ply, "r") as f:

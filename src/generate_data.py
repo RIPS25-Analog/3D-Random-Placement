@@ -16,9 +16,9 @@ import time
 
 # === ADJUSTABLE VARIABLES ===
 
-HDRI_PATH = "/home/data/raw/[dataset_name]/backgrounds/HDRI"
-OBJ_PATH = "/home/data/raw/[dataset_name]/3d_models"
-OUTPUT_PATH = "/home/data/3D_RP/output"
+HDRI_PATH = "/home/data/raw/[dataset_name]/backgrounds/HDRI" # example
+OBJ_PATH = "/home/data/raw/[dataset_name]/3d_models" # example
+OUTPUT_PATH = "/home/data/3D_RP/output" # example
 
 RANDOM_SEED = 0             # Set the random seed for reproducibility.
 
