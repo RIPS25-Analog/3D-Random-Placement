@@ -10,7 +10,7 @@ Generate synthetic data using 3D assets for object detection tasks.
 
 - mathutils
     - Version: 3.3.0
-    - (Optional: ```pip install mathutils```)
+    - ```pip install mathutils```
 
 - bpycv
     - Version: 1.0.0
@@ -126,7 +126,6 @@ output/
 
 ## Post-processing
 
-- After the generation cycle, run the Python script ```combine_output.py``` to combine everything in the output into one folder:
-    - ```python combine_output.py```
+- After the generation cycle, run the Python script ```combine_output.py``` to combine everything in the output into one folder.
 
 - The label for all objects in each image is stored as text strings that match the names of the category folders.
