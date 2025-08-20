@@ -14,15 +14,11 @@ import argparse
 import yaml
 import time
 
-from defaults import *
-
-
-
 # === ADJUSTABLE VARIABLES ===
 
-HDRI_PATH = HDRI_PATH
-OBJ_PATH = OBJ_PATH
-OUTPUT_PATH = OUTPUT_PATH
+HDRI_PATH = "/home/data/raw/[dataset_name]/backgrounds/HDRI"
+OBJ_PATH = "/home/data/raw/[dataset_name]/3d_models"
+OUTPUT_PATH = "/home/data/3D_RP/output"
 
 RANDOM_SEED = 0             # Set the random seed for reproducibility.
 
@@ -33,16 +29,16 @@ NUM_PICS = 10               # Number of pictures taken around per object
 # === INTERNAL VARIABLES ===
 
 TARGET_CLASSES = ["can", "toy_car"]
-ALL_CLASSES = [] # will be updated in the script
+ALL_CLASSES = [] # will be updated later in the script
 
-MIN_TARGET_OBJ = 0
-MAX_TARGET_OBJ = 2
-MIN_TOTAL_OBJ = 3
-MAX_TOTAL_OBJ = 6
+MIN_TARGET_OBJ = 0          # Minimum target objects appearing in a scene
+MAX_TARGET_OBJ = 2          # Maximum target objects appearing in a scene
+MIN_TOTAL_OBJ = 3           # Minimum total objects appearing in a scene
+MAX_TOTAL_OBJ = 6           # Maximum total objects appearing in a scene
 
-MAX_LIGHT_ENERGY = 50           # Maximum light intensity for the scene
-EXPOSURE_LOW = 0.5          # Minimum exposure rate for hdri backgrounds
-EXPOSURE_HIGH = 10          # Maximum exposure rate for hdri backgrounds
+MAX_LIGHT_ENERGY = 50       # Maximum light intensity for the scene
+MIN_EXPOSURE = 0.5          # Minimum exposure rate for hdri backgrounds
+MAX_EXPOSURE = 10          # Maximum exposure rate for hdri backgrounds
 
 RESOLUTION_X = 1920 // 2
 RESOLUTION_Y = 1080 // 2
@@ -198,7 +194,7 @@ def rotate_object(obj):
 
 
 
-# === ADD BACKGROUND ===
+# === ADD AND ADJUST HDRI BACKGROUND ===
 
 def add_hdri_background(scene, selected_hdri):
     if scene.world is None:
@@ -270,7 +266,7 @@ def update_hdri_settings(scene, hdri_path=None, brightness=1):
 
 
 
-# === GET BOUNDING BOXES ===
+# === RENDER AND SAVE FILES ===
 
 def get_bounding_box_for_all(all_objects):
     # Initialize min and max coordinates
@@ -303,13 +299,9 @@ def get_bounding_box_for_all(all_objects):
 
     return all_corners
 
-
-
-# === RENDER AND SAVE FILES ===
-
 def capture_views(camera, scene, depsgraph, selected_targets, selected_distractors, 
                   atmpt, iter, seed, arngmnt, all_classes, num_pics, 
-                  exposure_low, exposure_high, output_folder, save_files):
+                  min_exposure, max_exposure, output_folder, save_files):
     
     # Get the bounding box for all objects (so that the camera can zoom out to fit)
     all_objects = selected_targets + selected_distractors
@@ -338,9 +330,9 @@ def capture_views(camera, scene, depsgraph, selected_targets, selected_distracto
 
         # Change the exposure of the background
         if random.random() < 0.5:
-            brightness = random.uniform(exposure_low, 1)
+            brightness = random.uniform(min_exposure, 1)
         else:
-            brightness = random.uniform(1, exposure_high)
+            brightness = random.uniform(1, max_exposure)
         update_hdri_settings(scene, brightness=brightness)
 
         print(f"\n-------------------- Attempt {atmpt}; Iteration {iter+1}; Arrangment {arngmnt+1}; View angle {i+1} --------------------\n")
@@ -416,56 +408,90 @@ def capture_views(camera, scene, depsgraph, selected_targets, selected_distracto
 
 
 
-# === PRE-RENDER SETUP ===
+# === OBJECTS SETUP ===
 
-def setup_pass_index_to_label(lable_names):
-    pass_index_to_label = dict()
-    pass_index = 1
+def add_default_obj(scene):
+    # Add new camera
+    camera_data = bpy.data.cameras.new(name="Camera")
+    camera_object = bpy.data.objects.new("Camera", camera_data)
 
-    for label in lable_names:
-        # Get the collection of objects belonging to the same label class
-        collection = bpy.data.collections[label]
+    # Set camera location and rotation
+    camera_object.location = (0, -5, 3)
+    camera_object.rotation_euler = (1.1, 0, 0)
 
-        # Assign each object a unique index
-        for obj in collection.objects:
-            obj.pass_index = pass_index
-            pass_index_to_label.update({pass_index : label})
-            pass_index += 1
+    # Link camera to scene
+    scene.collection.objects.link(camera_object)
+    scene.camera = camera_object
+    
+    # Add new sunlight
+    light_data = bpy.data.lights.new(name="Sun", type='SUN')
+    light_object = bpy.data.objects.new(name="Sun", object_data=light_data)
 
-    return pass_index_to_label
+    # Set light location and rotation
+    light_object.location = (5, -5, 10)
+    light_object.rotation_euler = (0.7854, 0, 0.7854)  # 45 degrees down and to side
 
-def setup_output_folder(output_path, save_files):
-    # Regex to match folders like: attempt_#
-    pattern = re.compile(r"attempt_(\d+)")
+    # Link light to scene
+    scene.collection.objects.link(light_object)
 
-    # Find the highest existing attempt number
-    max_attempt = 0
-    for name in os.listdir(output_path):
-        match = pattern.fullmatch(name)
-        if match:
-            attempt_num = int(match.group(1))
-            if attempt_num > max_attempt:
-                max_attempt = attempt_num
+    return camera_object, light_object
 
-    next_attempt = max_attempt + 1
+def import_obj(scene, obj_path):
+    all_classes = []
+    
+    # Get all object class folders
+    class_folders = glob.glob(f"{obj_path}/*/")
 
-    # Prepare output directories
-    output_folder = os.path.join(output_path, f"attempt_{next_attempt}")
+    # Iterate through all the class folders under the objects folder
+    for class_folder in class_folders:
+        class_name = os.path.basename(os.path.dirname(class_folder))
+        
+        # Create new collection for each class
+        class_coll = bpy.data.collections.new(class_name)
+        scene.collection.children.link(class_coll)
 
-    if save_files:
-        # Create the output folder
-        os.makedirs(output_folder, exist_ok=True)
+        # Save the class name
+        all_classes.add(class_name)
 
-        yaml_path = os.path.join(output_folder, f"configs_{next_attempt}.yaml")
+        # Get all object folders (instances of the same class)
+        obj_folders = glob.glob(f"{class_folder}/*/")
 
-        basic_types = (int, float, str, bool, list, tuple, dict)
-        current_module = sys.modules[__name__]
-        all_vars = {k: v for k, v in vars(current_module).items() if not k.startswith("__") and isinstance(v, basic_types)}
+        # Iterate through all the object folders within the same class
+        for obj_folder in obj_folders:
+            obj_name = os.path.basename(os.path.dirname(obj_folder))
 
-        with open(yaml_path, "w") as f:
-            yaml.dump(all_vars, f, sort_keys=False)
+            # Iterate through all files in the object folder and try to find the .obj file
+            for file_path in glob.glob(f"{obj_folder}/*"):
+                # Get the file extensio
+                obj_ext = os.path.splitext(file_path)[1].lower()
 
-    return output_folder, yaml_path, next_attempt
+                if obj_ext == ".obj":
+                    # Import the object 
+                    bpy.ops.wm.obj_import(filepath=file_path)
+                    
+                    # Rename the object to the folder name (optional)
+                    new_obj = bpy.context.view_layer.objects.active
+                    new_obj.name = obj_name  
+
+                    # Set the origin to center  (optional)
+                    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+
+                    break  # Stop the loop after finding the .obj file
+            
+            # Unlink from the default collection (if any)
+            for coll in new_obj.users_collection:
+                coll.objects.unlink(new_obj)
+            
+            # Link the object to its class collection
+            class_coll.objects.link(new_obj)
+
+            # Move the object away from the origin to avoid unintentional occlusion
+            translate_object(new_obj, center=mathutils.Vector((100, 100, 100)))  
+            rescale_object(new_obj)  
+
+    # Update the global variable
+    global ALL_CLASSES
+    ALL_CLASSES = all_classes
 
 def get_selected_objects():
     target_objects = [] # (obj, label)
@@ -539,90 +565,8 @@ def clear_stage(scene):
 
     bpy.ops.outliner.orphans_purge()
 
-def add_default_obj(scene):
-    # Add new camera
-    camera_data = bpy.data.cameras.new(name="Camera")
-    camera_object = bpy.data.objects.new("Camera", camera_data)
-
-    # Set camera location and rotation
-    camera_object.location = (0, -5, 3)
-    camera_object.rotation_euler = (1.1, 0, 0)
-
-    # Link camera to scene
-    scene.collection.objects.link(camera_object)
-    scene.camera = camera_object
-    
-    
-    # Add new sunlight
-    light_data = bpy.data.lights.new(name="Sun", type='SUN')
-    light_object = bpy.data.objects.new(name="Sun", object_data=light_data)
-
-    # Set light location and rotation
-    light_object.location = (5, -5, 10)
-    light_object.rotation_euler = (0.7854, 0, 0.7854)  # 45 degrees down and to side
-
-    # Link light to scene
-    scene.collection.objects.link(light_object)
-
-    return camera_object, light_object
-
-def import_obj(scene, obj_path):
-    all_classes = set()
-    
-    # Get all category folders (available classes for label)
-    category_folders = glob.glob(f"{obj_path}/*/")
-
-    # Iterate through all the category folders under the objects folder
-    for category_folder in category_folders:
-        category_name = os.path.basename(os.path.dirname(category_folder))
-        
-        # Create new collection for each category
-        new_coll = bpy.data.collections.new(category_name)
-        scene.collection.children.link(new_coll)
-
-        all_classes.add(category_name)
-
-        # Gett all object folders (instances of the same category)
-        obj_folders = glob.glob(f"{category_folder}/*/")
-
-        # Iterate through all the object folders within the same category
-        for obj_folder in obj_folders:
-
-            # Iterate through all files in the object folder and try to find the .obj file
-            for file_path in glob.glob(f"{obj_folder}/*"):
-                # Get the file extension
-                obj_ext = os.path.splitext(file_path)[1].lower()
-
-                if obj_ext == ".obj":
-                    # Import the object 
-                    bpy.ops.wm.obj_import(filepath=file_path)
-                    
-                    # Rename the object to the folder name (optional)
-                    new_obj = bpy.context.view_layer.objects.active
-                    new_obj.name = obj_folder  
-
-                    # Set the origin to center
-                    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
-
-                    break  # Stop after finding the .obj file
-            
-            for coll in new_obj.users_collection:
-                coll.objects.unlink(new_obj)
-            
-            # Link the object to the new collection
-            new_coll.objects.link(new_obj)
-
-            # Move the object away from the origin to avoid unintentional occlusion
-            translate_object(new_obj, center=mathutils.Vector((100, 100, 100)))  
-            rescale_object(new_obj)  
-
-    global ALL_CLASSES
-    ALL_CLASSES = list(all_classes)
-
 def render_setup(scene):
-    # Renderer setup
-    scene.render.engine = 'CYCLES'
-    #scene.render.engine = 'BLENDER_EEVEE'
+    scene.render.engine = 'CYCLES' # Only this CYCLES supports headless rendering
 
     prefs = bpy.context.preferences.addons['cycles'].preferences
     prefs.compute_device_type = 'CUDA'
@@ -644,6 +588,39 @@ def render_setup(scene):
     scene.render.use_persistent_data = False # Set to True for faster render but more GPU usage
     scene.render.resolution_x = RESOLUTION_X
     scene.render.resolution_y = RESOLUTION_Y
+
+def setup_output_folder(output_path, save_files):
+    # Regex to match folders like: attempt_#
+    pattern = re.compile(r"attempt_(\d+)")
+
+    # Find the highest existing attempt number
+    max_attempt = 0
+    for name in os.listdir(output_path):
+        match = pattern.fullmatch(name)
+        if match:
+            attempt_num = int(match.group(1))
+            if attempt_num > max_attempt:
+                max_attempt = attempt_num
+
+    next_attempt = max_attempt + 1
+
+    # Prepare output directories
+    output_folder = os.path.join(output_path, f"attempt_{next_attempt}")
+
+    if save_files:
+        # Create the output folder
+        os.makedirs(output_folder, exist_ok=True)
+
+        yaml_path = os.path.join(output_folder, f"configs_{next_attempt}.yaml")
+
+        basic_types = (int, float, str, bool, list, tuple, dict)
+        current_module = sys.modules[__name__]
+        all_vars = {k: v for k, v in vars(current_module).items() if not k.startswith("__") and isinstance(v, basic_types)}
+
+        with open(yaml_path, "w") as f:
+            yaml.dump(all_vars, f, sort_keys=False)
+
+    return output_folder, yaml_path, next_attempt
 
 
 
@@ -707,7 +684,7 @@ def main(args):
             # Capture selected objects
             capture_views(camera, scene, depsgraph, selected_targets, selected_distractors, 
                           atmpt, iter, args.seed, arngmnt, ALL_CLASSES, args.num_pics, 
-                          EXPOSURE_LOW, EXPOSURE_HIGH, output_subfolder, SAVE_FILES)
+                          MIN_EXPOSURE, MAX_EXPOSURE, output_subfolder, SAVE_FILES)
             
             # Move the objects away from the origin to avoid unintentional occlusion
             for obj, _label in selected_targets + selected_distractors:

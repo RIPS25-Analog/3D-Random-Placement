@@ -1,13 +1,7 @@
 import requests
 import os
-import sys
 
-# This lets the script locate defaults.py one level up
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from defaults import *
-
-
-save_folder = HDRI_PATH
+save_folder = "/home/data/raw/[dataset_name]/backgrounds/HDRI"
 ids_file = "hdri_ids.txt"   
 
 os.makedirs(save_folder, exist_ok=True)

@@ -54,19 +54,19 @@ Generate synthetic data using 3D assets for object detection tasks.
 
 ```                           
 ├── background_hdri/                    
-|   ├── bg_1_8k.exr                   # "moon_lab_8k"
-|   ├── bg_2_8k.exr                   # "illovo_beach_balcony_8k"
+|   ├── bg_1_8k.exr                     # "moon_lab_8k"
+|   ├── bg_2_8k.exr                     # "illovo_beach_balcony_8k"
 |   └── ...
-├── objects/                          # Store 3D object models
-|   ├── category_1/                   # "can"
-|   |   ├── obj_1/                    # "red_can"
+├── objects/                            # Store 3D object models
+|   ├── category_1/                     # "can"
+|   |   ├── obj_1/                      # "red_can"
 |   |   |   ├── obj_1.obj
 |   |   |   ├── material.mtl
 |   |   |   └── texture.png
-|   |   ├── obj_2/                    # "white_can"
-|   |   ├── obj_3/                    # "orange_can"
+|   |   ├── obj_2/                      # "white_can"
+|   |   ├── obj_3/                      # "orange_can"
 |   |   └── ...
-|   ├── category_2/                   # "toy_car"
+|   ├── category_2/                     # "toy_car"
 |   ├── ...
 |   └── ...
 ```
@@ -103,9 +103,9 @@ Inside each ```attempt_<num>``` folder, the output contain a  ```configs_<num>.y
 
 ```
 output/
-├── attempt_1/
-|   ├── 1_background_1/
-|   |   ├── images/
+├── attempt_1/                          # attempt
+|   ├── 1_background_1/                 # iteration
+|   |   ├── images/                     # arrangement & num-pics
 |   |   └── labels/
 |   ├── 2_background_2/
 |   ├── 3_background_3/

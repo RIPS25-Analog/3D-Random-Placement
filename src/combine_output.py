@@ -4,10 +4,7 @@ import glob
 import shutil
 from pathlib import Path
 
-from defaults import *
-
-
-output = OUTPUT_PATH
+output = "/home/data/3D_RP/output"
 
 combined_output = os.path.join(
     os.path.dirname(output), 
@@ -45,8 +42,6 @@ def combine():
                         shutil.copy(label_file, combined_dir / "labels" / label_file.name)
 
     print("Files combined successfully.")
-
-
 
 combine()
 
