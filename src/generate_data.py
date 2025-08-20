@@ -343,9 +343,9 @@ def capture_views(camera, scene, depsgraph, selected_targets, selected_distracto
 
         print(f"\n-------------------- Attempt {atmpt}; Iteration {iter+1}; Arrangment {arngmnt+1}; View angle {i+1} --------------------\n")
         
-        # Set up objects isntance id
+        # Set up objects isntance id for BOTH targets and non-targets
         index = 0
-        for obj, label in selected_targets:
+        for obj, label in selected_targets + selected_distractors:
             obj["inst_id"] = (all_classes.index(label) + 1) * 1000 + index
             index += 1
 
@@ -358,8 +358,8 @@ def capture_views(camera, scene, depsgraph, selected_targets, selected_distracto
 
         bboxes = dict()
 
-        # Get bounding box annotations
-        for obj, label in selected_targets:
+        # Get bounding box annotations for BOTH targets and non-targets
+        for obj, label in selected_targets + selected_distractors:
             inst_id = obj["inst_id"]
 
             ys, xs = np.where(inst_map == inst_id)
@@ -457,7 +457,7 @@ def import_obj(scene, obj_path):
         scene.collection.children.link(class_coll)
 
         # Save the class name
-        all_classes.add(class_name)
+        all_classes.append(class_name)
 
         # Get all object folders (instances of the same class)
         obj_folders = glob.glob(f"{class_folder}/*/")

@@ -90,6 +90,8 @@ Generate synthetic data using 3D assets for object detection tasks.
 
     - **Explanation:** The Python script ```generate_data.py``` can consume a large amount of memory during rendering, and if the number of generated images is too high, it will likely encounter the "GPU out of memory" issue and the program will terminate. To prevent this, we use a Bash file to run a for loop to execute the script multiple times, each with a different random seed.
 
+- **Note:** Use absolute paths for ```generate_data.py```.
+
 - Variable explanation:
 
     - ```attempt```: One attempt corresponds to a single execution of the script. The bash file controls the number of attempts.
