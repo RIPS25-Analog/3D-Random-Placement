@@ -4,7 +4,7 @@ import glob
 import shutil
 from pathlib import Path
 
-output = "/home/data/3D_RP/output" # example
+output = "/home/data/3D_RP/output" # Example
 
 combined_output = os.path.join(
     os.path.dirname(output), 

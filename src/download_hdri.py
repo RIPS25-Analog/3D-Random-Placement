@@ -1,7 +1,7 @@
 import requests
 import os
 
-save_folder = "/home/data/raw/[dataset_name]/backgrounds/HDRI" # xample
+save_folder = "/home/data/raw/[dataset_name]/backgrounds/HDRI" # Example
 ids_file = "hdri_ids.txt"   
 
 os.makedirs(save_folder, exist_ok=True)

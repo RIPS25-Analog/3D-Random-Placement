@@ -4,15 +4,15 @@ import sys
 import shutil
 import tempfile
 
-input_path = "/home/data/pace/models" # example
-output_path = "/home/data/raw/[dataset_name]/3d_models" # example
+input_path = "/home/data/pace/models" # Example
+output_path = "/home/data/raw/[dataset_name]/3d_models" # Example
 
 models = {
     "can" : [74, 57, 58],
     "toy_car" : [456, 458, 461, 470], 
     "distractors" : [56, 82, 87, 101, 153, 207, 228, 229, 249, 257, 286, 317, 
                      338, 361, 404, 410, 415, 434, 435, 436, 528, 543, 635, 636]
-} # example
+} # Example
 
 def rewrite_ply(input_ply):
     with open(input_ply, "r") as f:
@@ -23,10 +23,10 @@ def rewrite_ply(input_ply):
 
     for line in lines:
         if line.startswith("property float u"):
-            # rename u -> texture_u
+            # Eename u -> texture_u
             new_lines.append("property float texture_u\n")
         elif line.startswith("property float v"):
-            # rename v -> texture_v
+            # Eename v -> texture_v
             new_lines.append("property float texture_v\n")
         else:
             new_lines.append(line)
@@ -41,7 +41,7 @@ def rewrite_ply(input_ply):
     return tmp_path
 
 def convert_ply_to_obj():
-    # Clear output folder
+    # ---- Clear output folder ----
     for filename in os.listdir(output_path):
         file_path = os.path.join(output_path, filename)
         try:
@@ -71,14 +71,14 @@ def convert_ply_to_obj():
             input_ply = os.path.join(input_path, f"{name}.ply")
             output_obj = os.path.join(output_obj_folder, f"{name}.obj")
 
-            # Convert PLY file into MeshLab-readable version
+            # Convert PLY file into temporaray, MeshLab-readable version
             tmp_path = rewrite_ply(input_ply)
 
-            # Create a MeshSet object and load the PLY file
+            # Create a MeshSet object and load the temporaray PLY file
             ms = pymeshlab.MeshSet()
             ms.load_new_mesh(tmp_path)
 
-            # Save as OBJ
+            # Save the MeshSet as OBJ
             ms.save_current_mesh(
                 output_obj,
                 save_vertex_color=True,
@@ -109,7 +109,7 @@ def convert_ply_to_obj():
                 for line in lines:
                     new_lines.append(line)
                     if line.startswith("newmtl "):
-                        new_lines.append(f"\nmap_Kd {texture_file}\n")  # insert texture
+                        new_lines.append(f"\nmap_Kd {texture_file}\n")  # Insert texture
 
                 with open(mtl_file, "w", encoding="utf-8") as f:
                     f.writelines(new_lines)

@@ -16,11 +16,11 @@ import time
 
 # === ADJUSTABLE VARIABLES ===
 
-HDRI_PATH = "/home/data/raw/[dataset_name]/backgrounds/HDRI" # example
-OBJ_PATH = "/home/data/raw/[dataset_name]/3d_models" # example
-OUTPUT_PATH = "/home/data/3D_RP/output" # example
+HDRI_PATH = "/home/data/raw/[dataset_name]/backgrounds/HDRI" # Example
+OBJ_PATH = "/home/data/raw/[dataset_name]/3d_models" # Example
+OUTPUT_PATH = "/home/data/3D_RP/output" # Example
 
-RANDOM_SEED = 0             # Set the random seed for reproducibility.
+RANDOM_SEED = 0             # Set the random seed for reproducibility
 
 ITERATION = 10              # Number of scene/backgrounds to generate
 ARRANGEMENT = 10            # Number of arrangements per iteration
@@ -29,7 +29,7 @@ NUM_PICS = 10               # Number of pictures taken around per object
 # === INTERNAL VARIABLES ===
 
 TARGET_CLASSES = ["can", "toy_car"]
-ALL_CLASSES = [] # will be updated later in the script
+ALL_CLASSES = []            # Will be updated later in the script
 
 MIN_TARGET_OBJ = 0          # Minimum target objects appearing in a scene
 MAX_TARGET_OBJ = 2          # Maximum target objects appearing in a scene
@@ -38,7 +38,7 @@ MAX_TOTAL_OBJ = 6           # Maximum total objects appearing in a scene
 
 MAX_LIGHT_ENERGY = 50       # Maximum light intensity for the scene
 MIN_EXPOSURE = 0.5          # Minimum exposure rate for hdri backgrounds
-MAX_EXPOSURE = 10          # Maximum exposure rate for hdri backgrounds
+MAX_EXPOSURE = 10           # Maximum exposure rate for hdri backgrounds
 
 RESOLUTION_X = 1920 // 2
 RESOLUTION_Y = 1080 // 2
@@ -48,7 +48,7 @@ TILE_SIZE = 4096            # Tile size for rendering. The higher the faster and
 
 SAVE_FILES = True
 
-CENTER = mathutils.Vector((0, 0, 0))  # Center of the box where objects will be placed
+CENTER = mathutils.Vector((0, 0, 0)) # Center of the box where objects will be placed
 X_RANGE = 0.4 # Range for X-axis
 Y_RANGE = 0.4 # Range for Y-axis
 Z_RANGE = 0.2 # Range for Z-axis
@@ -139,12 +139,18 @@ def rescale_object(obj, target_size=RESCALE_SIZE, eps=EPS, apply=True):
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 
 def translate_object(obj, center=CENTER, x_range=X_RANGE, y_range=Y_RANGE, z_range=Z_RANGE):
+    '''
+    Randomly place the object inside a cube-shaped area.
+    '''
     x = random.uniform(center.x - x_range, center.x + x_range)
     y = random.uniform(center.y - y_range, center.y + y_range)
     z = random.uniform(center.z - z_range, center.z + z_range)
     obj.location = (x, y, z)
 
 def translate_object_on_surface(obj, x_range, y_range, z_range, center=CENTER):
+    '''
+    Randomly place the object on the surface of a cube-shaped area.
+    '''
     # Compute min and max bounds
     x_min, x_max = center.x - x_range, center.x + x_range
     y_min, y_max = center.y - y_range, center.y + y_range
